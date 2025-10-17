@@ -1,94 +1,129 @@
-<body>
-  <h1>📊 Monitoreo de Sensores ESP32</h1>
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel de Sensores ESP32</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background: #0d1117;
+        color: #fff;
+        margin: 0;
+        padding: 20px;
+      }
+      h1 {
+        color: #00c8ff;
+      }
+      .chart-container {
+        width: 90%;
+        max-width: 800px;
+        margin: 30px auto;
+        background: #161b22;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 0 10px #00c8ff55;
+      }
+      canvas {
+        background: #0d1117;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🌡️ Panel de Sensores ESP32</h1>
 
-  <div id="charts">
-    <div>
+    <div class="chart-container">
       <h2>Temperatura (°C)</h2>
       <canvas id="tempChart"></canvas>
     </div>
-    <div>
+
+    <div class="chart-container">
       <h2>Humedad (%)</h2>
       <canvas id="humChart"></canvas>
     </div>
-    <div>
+
+    <div class="chart-container">
       <h2>pH</h2>
       <canvas id="phChart"></canvas>
     </div>
-  </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const socket = io();
+    <script>
+      const socket = io();
 
-    const tempCtx = document.getElementById('tempChart').getContext('2d');
-    const humCtx = document.getElementById('humChart').getContext('2d');
-    const phCtx = document.getElementById('phChart').getContext('2d');
+      const labels = [];
+      const tempData = [];
+      const humData = [];
+      const phData = [];
 
-    const tempChart = new Chart(tempCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'Temperatura', data: [], borderColor: 'red', fill: false }] },
-      options: { responsive: true, scales: { y: { beginAtZero: false } } }
-    });
+      // Crear función para generar gráfico
+      const createChart = (ctx, label, color, data) => {
+        return new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: label,
+                data: data,
+                borderColor: color,
+                backgroundColor: color + "33",
+                tension: 0.3,
+                fill: true,
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { ticks: { color: "#ccc" } },
+              y: { ticks: { color: "#ccc" } },
+            },
+            plugins: {
+              legend: { labels: { color: "#fff" } },
+            },
+          },
+        });
+      };
 
-    const humChart = new Chart(humCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'Humedad', data: [], borderColor: 'blue', fill: false }] },
-      options: { responsive: true, scales: { y: { beginAtZero: false } } }
-    });
+      const tempChart = createChart(
+        document.getElementById("tempChart"),
+        "Temperatura",
+        "#ff4d4d",
+        tempData
+      );
+      const humChart = createChart(
+        document.getElementById("humChart"),
+        "Humedad",
+        "#4dd2ff",
+        humData
+      );
+      const phChart = createChart(
+        document.getElementById("phChart"),
+        "pH",
+        "#7fff7f",
+        phData
+      );
 
-    const phChart = new Chart(phCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'pH', data: [], borderColor: 'green', fill: false }] },
-      options: { responsive: true, scales: { y: { beginAtZero: false } } }
-    });
+      socket.on("mqtt_message", (data) => {
+        const now = new Date().toLocaleTimeString();
+        if (labels.length > 10) labels.shift();
+        labels.push(now);
 
-    socket.on('mqtt_message', (data) => {
-      const { temperatura, humedad, ph } = data;
-      const time = new Date().toLocaleTimeString();
+        if (tempData.length > 10) tempData.shift();
+        if (humData.length > 10) humData.shift();
+        if (phData.length > 10) phData.shift();
 
-      if (tempChart.data.labels.length > 10) {
-        tempChart.data.labels.shift();
-        tempChart.data.datasets[0].data.shift();
-        humChart.data.labels.shift();
-        humChart.data.datasets[0].data.shift();
-        phChart.data.labels.shift();
-        phChart.data.datasets[0].data.shift();
-      }
+        tempData.push(data.temperatura);
+        humData.push(data.humedad);
+        phData.push(data.ph);
 
-      tempChart.data.labels.push(time);
-      humChart.data.labels.push(time);
-      phChart.data.labels.push(time);
-
-      tempChart.data.datasets[0].data.push(temperatura);
-      humChart.data.datasets[0].data.push(humedad);
-      phChart.data.datasets[0].data.push(ph);
-
-      tempChart.update();
-      humChart.update();
-      phChart.update();
-    });
-  </script>
-
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #fff;
-      text-align: center;
-    }
-    #charts {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 20px;
-    }
-    canvas {
-      width: 350px !important;
-      height: 250px !important;
-      background: #222;
-      border-radius: 10px;
-      padding: 10px;
-    }
-  </style>
-</body>
+        tempChart.update();
+        humChart.update();
+        phChart.update();
+      });
+    </script>
+  </body>
+</html>
