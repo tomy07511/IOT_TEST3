@@ -14,29 +14,29 @@ mongoose.connect(mongoUri)
   .then(() => console.log("✅ Conectado a MongoDB Atlas"))
   .catch(err => console.error("❌ Error conectando a MongoDB:", err));
 
-// 📊 Esquema del sensor LoRa
+// 📊 Esquema de datos del LoRa
 const sensorSchema = new mongoose.Schema({
   humedad: Number,
   temperatura: Number,
   conductividad: Number,
-  pH: Number,
+  ph: Number,
   nitrogeno: Number,
   fosforo: Number,
   potasio: Number,
   bateria: Number,
+  rssi: Number,
   fecha: { type: Date, default: Date.now },
 });
-
 const Sensor = mongoose.model("Sensor", sensorSchema);
 
-// 🔹 Conexión MQTT
-const mqttClient = mqtt.connect("mqtt://TU_BROKER:PUERTO"); // Ej: mqtt://broker.hivemq.com:1883
+// 🔹 Conexión MQTT (mismo broker y topic que tu ESP32)
+const mqttClient = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 mqttClient.on("connect", () => {
-  console.log("✅ Conectado al broker MQTT");
-  mqttClient.subscribe("sensor/loRa", (err) => {
-    if (err) console.error("❌ Error suscribiéndose al topic MQTT:", err);
-    else console.log("📡 Suscrito al topic 'sensor/loRa'");
+  console.log("✅ Conectado al broker MQTT HiveMQ");
+  mqttClient.subscribe("dan/esp32/datos", (err) => {
+    if (err) console.error("❌ Error al suscribirse:", err);
+    else console.log("📡 Suscrito al topic: dan/esp32/datos");
   });
 });
 
@@ -44,37 +44,28 @@ mqttClient.on("error", (err) => {
   console.error("❌ Error MQTT:", err);
 });
 
+// 📥 Cuando llegan datos desde el ESP32
 mqttClient.on("message", async (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
-    console.log("📥 Mensaje recibido:", data);
+    console.log("📩 Mensaje MQTT recibido:", data);
 
     // Guardar en MongoDB
-    const sensor = new Sensor({
-      humedad: data.humedad,
-      temperatura: data.temperatura,
-      conductividad: data.conductividad,
-      pH: data.pH,
-      nitrogeno: data.nitrogeno,
-      fosforo: data.fosforo,
-      potasio: data.potasio,
-      bateria: data.bateria
-    });
-
+    const sensor = new Sensor(data);
     await sensor.save();
-    console.log("💾 Datos guardados en MongoDB");
+    console.log("💾 Datos guardados en MongoDB correctamente");
   } catch (err) {
     console.error("❌ Error procesando mensaje MQTT:", err);
   }
 });
 
-// 🧩 Endpoints
+// 🧩 Endpoints REST
 app.get("/api/data/latest", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
     res.json(data.reverse());
   } catch (err) {
-    res.status(500).json({ error: "Error obteniendo los datos" });
+    res.status(500).json({ error: "Error obteniendo los últimos datos" });
   }
 });
 
@@ -87,7 +78,7 @@ app.get("/api/data/all", async (req, res) => {
   }
 });
 
-// Servir archivos estáticos
+// Servir archivos estáticos (mantiene tu estilo azul/cyan original)
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
