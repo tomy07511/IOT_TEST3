@@ -7,8 +7,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔹 Conexión directa a MongoDB Atlas
-const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.abcde.mongodb.net/sensores?retryWrites=true&w=majority";
+// 🔹 Conexión a MongoDB Atlas
+// ⚠️ Reemplaza TU_USUARIO, TU_CLAVE y MI_CLUSTER por tus datos reales
+const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 mongoose.connect(mongoUri)
   .then(() => console.log("✅ Conectado a MongoDB Atlas"))
@@ -33,7 +34,7 @@ const Sensor = mongoose.model("Sensor", sensorSchema);
 app.get("/api/data/latest", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
-    res.json(data.reverse());
+    res.json(data.reverse()); // viejo -> nuevo
   } catch (err) {
     res.status(500).json({ error: "Error obteniendo los datos" });
   }
