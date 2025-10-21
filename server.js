@@ -1,73 +1,77 @@
 import express from "express";
-import http from "http";
-import { Server } from "socket.io";
 import mongoose from "mongoose";
+import cors from "cors";
 import mqtt from "mqtt";
-import path from "path";
-import { fileURLToPath } from "url";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
-
-// ================== CONFIG ==================
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"; // <-- reemplaza esto con tu cadena de conexión real de MongoDB Atlas
-const MQTT_BROKER = "mqtt://test.mosquitto.org";
-const MQTT_TOPIC = "esp32/datos";
-
-// ================== MONGODB ==================
-mongoose.connect(MONGO_URI)
-  .then(() => console.log("✅ Conectado a MongoDB"))
-  .catch((err) => console.error("❌ Error conectando a MongoDB:", err));
-
-const sensorSchema = new mongoose.Schema({
-  temperatura: Number,
-  humedad: Number,
-  fecha: { type: Date, default: Date.now }
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "*" },
 });
 
+app.use(cors());
+app.use(express.json());
+
+const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+mongoose.connect(mongoUri)
+  .then(() => console.log("✅ Conectado a MongoDB Atlas"))
+  .catch(err => console.error("❌ Error conectando a MongoDB:", err));
+
+const sensorSchema = new mongoose.Schema({
+  humedad: Number,
+  temperatura: Number,
+  conductividad: Number,
+  pH: Number,
+  nitrogeno: Number,
+  fosforo: Number,
+  potasio: Number,
+  bateria: Number,
+  fecha: { type: Date, default: Date.now },
+});
 const Sensor = mongoose.model("Sensor", sensorSchema);
 
-// ================== MQTT ==================
-const mqttClient = mqtt.connect(MQTT_BROKER);
+// 🔹 MQTT
+const mqttClient = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 mqttClient.on("connect", () => {
-  console.log("📡 Conectado al broker MQTT");
-  mqttClient.subscribe(MQTT_TOPIC, (err) => {
-    if (!err) console.log(`🟢 Suscrito al topic: ${MQTT_TOPIC}`);
-    else console.error("❌ Error al suscribirse:", err);
-  });
+  console.log("✅ Conectado al broker MQTT");
+  mqttClient.subscribe("dan/esp32/datos");
 });
 
 mqttClient.on("message", async (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
-    console.log(`📥 Datos MQTT recibidos:`, data);
+    console.log("📥 Mensaje recibido:", data);
 
-    const nuevoDato = new Sensor({
-      temperatura: data.temperatura,
-      humedad: data.humedad
-    });
-    await nuevoDato.save();
+    const sensor = new Sensor(data);
+    await sensor.save();
+    console.log("💾 Guardado en MongoDB");
 
-    // Emitir a todos los clientes conectados en tiempo real
-    io.emit("nuevo_dato", nuevoDato);
-  } catch (error) {
-    console.error("❌ Error procesando mensaje MQTT:", error);
+    // 🔹 Enviar el nuevo dato a todos los clientes conectados
+    io.emit("nuevoDato", data);
+
+  } catch (err) {
+    console.error("❌ Error procesando mensaje:", err);
   }
 });
 
-// ================== SERVIDOR WEB ==================
-app.use(express.static(path.join(__dirname, "public")));
-
-io.on("connection", async (socket) => {
-  console.log("🖥️ Cliente web conectado");
-
-  const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(10).lean();
-  socket.emit("historico", ultimos.reverse());
+app.get("/api/data/latest", async (req, res) => {
+  const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
+  res.json(data.reverse());
 });
 
-server.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
+app.get("/api/data/all", async (req, res) => {
+  const data = await Sensor.find().sort({ fecha: -1 });
+  res.json(data);
+});
+
+app.use(express.static("public"));
+
+const PORT = process.env.PORT || 3000;
+httpServer.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
+
+io.on("connection", (socket) => {
+  console.log("🖥️ Cliente conectado al socket");
+});
