@@ -8,15 +8,15 @@
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
-      background: #0d1b2a; /* azul oscuro */
-      color: #e0f7fa;       /* texto cyan claro */
+      background: #0d1b2a;
+      color: #e0f7fa;
       margin: 0;
       padding: 20px;
     }
     h1 {
       text-align: center;
       margin-bottom: 30px;
-      color: #00ffff; /* cyan */
+      color: #00ffff;
     }
     .chart-grid {
       display: grid;
@@ -25,7 +25,7 @@
       margin-bottom: 40px;
     }
     .chart-container {
-      background: #1b263b; /* azul más claro */
+      background: #1b263b;
       border-radius: 15px;
       padding: 20px;
       box-shadow: 0 2px 10px rgba(0, 255, 255, 0.3);
@@ -45,7 +45,7 @@
       text-align: center;
     }
     th {
-      background: #0a9396; /* cyan oscuro */
+      background: #0a9396;
       color: #e0f7fa;
     }
     .pagination button {
@@ -117,8 +117,10 @@
   <div class="pagination" id="pagination"></div>
   <div class="record-info" id="recordInfo"></div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const SERVER_URL = ""; // dejar vacío para rutas relativas
+    const SERVER_URL = "";
+    const socket = io();
 
     const charts = {};
     const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria"];
@@ -133,30 +135,9 @@
     }
     variables.forEach(v=>createChart(v,v.charAt(0).toUpperCase()+v.slice(1)));
 
-    async function loadLatestData(){
-      try{
-        const res = await fetch(`${SERVER_URL}/api/data/latest`);
-        const data = await res.json();
-        const labels = data.map(d=>new Date(d.fecha).toLocaleString());
-        variables.forEach(v=>{
-          charts[v].data.labels = labels;
-          charts[v].data.datasets[0].data = data.map(d=>d[v]);
-          charts[v].update();
-        });
-      }catch(e){console.error("Error cargando últimos datos:",e);}
-    }
-
     let allData = [];
     let currentPage = 1;
     const recordsPerPage = 20;
-
-    async function loadAllData(){
-      try{
-        const res = await fetch(`${SERVER_URL}/api/data/all`);
-        allData = await res.json();
-        renderTable();
-      }catch(e){console.error("Error cargando todos los datos:",e);}
-    }
 
     function renderTable(){
       const tablaSelect = document.getElementById("tablaSelect").value;
@@ -181,14 +162,39 @@
       document.getElementById("recordInfo").textContent=`Mostrando ${start+1}-${Math.min(end,totalRecords)} de ${totalRecords} registros`;
     }
 
-    document.getElementById("tablaSelect").addEventListener("change",()=>{
-      currentPage=1;
+    document.getElementById("tablaSelect").addEventListener("change",()=>{ currentPage=1; renderTable(); });
+
+    // 🔹 Cargar histórico desde MongoDB al iniciar
+    async function loadAllData(){
+      try{
+        const res = await fetch(`${SERVER_URL}/api/data/all`);
+        allData = await res.json();
+        renderTable();
+      }catch(e){console.error("Error cargando todos los datos:",e);}
+    }
+
+    // 🔹 Escuchar datos en tiempo real (MQTT → Socket.io)
+    socket.on("mqttData",(d)=>{
+      const fecha = new Date().toLocaleString();
+      d.fecha = fecha;
+      allData.unshift(d);
+      allData = allData.slice(0,200); // mantener 200 últimos
       renderTable();
+      variables.forEach(v=>{
+        charts[v].data.labels.push(fecha);
+        charts[v].data.datasets[0].data.push(d[v]);
+        if(charts[v].data.labels.length>50){
+          charts[v].data.labels.shift();
+          charts[v].data.datasets[0].data.shift();
+        }
+        charts[v].update();
+      });
     });
 
-    loadLatestData();
+    // 🔹 Si no hay datos MQTT, recargar desde MongoDB
+    setInterval(loadAllData, 10000);
+
     loadAllData();
-    setInterval(()=>{ loadLatestData(); loadAllData(); },1000);
   </script>
 </body>
 </html>
