@@ -1,14 +1,13 @@
-// server.js
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import mqtt from "mqtt";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // 🔹 Conexión a MongoDB Atlas
-// ⚠️ Reemplaza TU_USUARIO, TU_CLAVE y MI_CLUSTER por tus datos reales
 const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 mongoose.connect(mongoUri)
@@ -30,17 +29,55 @@ const sensorSchema = new mongoose.Schema({
 
 const Sensor = mongoose.model("Sensor", sensorSchema);
 
-// 🧩 Endpoint: últimos 10 registros
+// 🔹 Conexión MQTT
+const mqttClient = mqtt.connect("mqtt://TU_BROKER:PUERTO"); // Ej: mqtt://broker.hivemq.com:1883
+
+mqttClient.on("connect", () => {
+  console.log("✅ Conectado al broker MQTT");
+  mqttClient.subscribe("sensor/loRa", (err) => {
+    if (err) console.error("❌ Error suscribiéndose al topic MQTT:", err);
+    else console.log("📡 Suscrito al topic 'sensor/loRa'");
+  });
+});
+
+mqttClient.on("error", (err) => {
+  console.error("❌ Error MQTT:", err);
+});
+
+mqttClient.on("message", async (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    console.log("📥 Mensaje recibido:", data);
+
+    // Guardar en MongoDB
+    const sensor = new Sensor({
+      humedad: data.humedad,
+      temperatura: data.temperatura,
+      conductividad: data.conductividad,
+      pH: data.pH,
+      nitrogeno: data.nitrogeno,
+      fosforo: data.fosforo,
+      potasio: data.potasio,
+      bateria: data.bateria
+    });
+
+    await sensor.save();
+    console.log("💾 Datos guardados en MongoDB");
+  } catch (err) {
+    console.error("❌ Error procesando mensaje MQTT:", err);
+  }
+});
+
+// 🧩 Endpoints
 app.get("/api/data/latest", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
-    res.json(data.reverse()); // viejo -> nuevo
+    res.json(data.reverse());
   } catch (err) {
     res.status(500).json({ error: "Error obteniendo los datos" });
   }
 });
 
-// 📋 Endpoint: todos los registros
 app.get("/api/data/all", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 });
