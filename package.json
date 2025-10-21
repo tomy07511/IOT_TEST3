@@ -1,0 +1,29 @@
+{
+  "name": "iot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomy07511/IOT_TEST2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tomy07511/IOT_TEST2/issues"
+  },
+  "homepage": "https://github.com/tomy07511/IOT_TEST2#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "install": "^0.13.0",
+    "mongodb": "^6.20.0",
+    "mongoose": "^8.19.2",
+    "mqtt": "^5.14.1",
+    "npm": "^11.6.2",
+    "socket.io": "^4.8.1"
+  }
+}
