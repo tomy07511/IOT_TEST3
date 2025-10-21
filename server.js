@@ -15,14 +15,22 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+
+// Socket.IO con configuración para Render
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  transports: ["websocket", "polling"]
+});
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 // ==============================
-// 🔹 Conexión a MongoDB Atlas
+// 🔹 Conexión a MongoDB
 // ==============================
 const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
@@ -86,17 +94,24 @@ mqttClient.on("message", async (topic, message) => {
     await sensor.save();
     console.log("💾 Guardado en MongoDB");
 
-    // 🔹 Emitir al frontend en tiempo real
+    // Emitir al navegador conectado
     io.emit("nuevoDato", data);
-    console.log("📡 Enviado a clientes en tiempo real");
-
+    console.log("📡 Dato enviado en tiempo real a los clientes");
   } catch (err) {
     console.error("❌ Error procesando mensaje MQTT:", err);
   }
 });
 
 // ==============================
-// 🔹 Endpoints HTTP
+// 🔹 Conexión Socket.IO
+// ==============================
+io.on("connection", (socket) => {
+  console.log("🖥️ Cliente conectado a Socket.IO");
+  socket.on("disconnect", () => console.log("❌ Cliente desconectado"));
+});
+
+// ==============================
+// 🔹 Endpoints REST
 // ==============================
 app.get("/api/data/latest", async (req, res) => {
   try {
@@ -107,17 +122,8 @@ app.get("/api/data/latest", async (req, res) => {
   }
 });
 
-app.get("/api/data/all", async (req, res) => {
-  try {
-    const data = await Sensor.find().sort({ fecha: -1 });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "Error obteniendo todos los datos" });
-  }
-});
-
 // ==============================
-// 🔹 Inicializar servidor
+// 🔹 Iniciar servidor
 // ==============================
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
