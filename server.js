@@ -1,151 +1,73 @@
 import express from "express";
+import http from "http";
+import { Server } from "socket.io";
 import mongoose from "mongoose";
 import cors from "cors";
-import mqtt from "mqtt";
-import { createServer } from "http";
-import { Server } from "socket.io";
 import path from "path";
-import { fileURLToPath } from "url";
-
-// ==============================
-// 🔹 Configuración base
-// ==============================
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
-const httpServer = createServer(app);
-
-// Socket.IO para tiempo real
-const io = new Server(httpServer, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  transports: ["websocket", "polling"]
-});
+const server = http.createServer(app);
+const io = new Server(server);
+const __dirname = path.resolve();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ==============================
-// 🔹 Conexión a MongoDB
-// ==============================
-const mongoUri = "mongodb+srv://daruksalem:sopa123@cluster0.jakv4ny.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+// Conexión a MongoDB
+mongoose.connect("mongodb://127.0.0.1:27017/sensores", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
 
-mongoose.connect(mongoUri)
-  .then(() => console.log("✅ Conectado a MongoDB Atlas"))
-  .catch(err => console.error("❌ Error conectando a MongoDB:", err));
-
-// ==============================
-// 📊 Esquema del sensor
-// ==============================
 const sensorSchema = new mongoose.Schema({
+  fecha: Date,
   humedad: Number,
   temperatura: Number,
   conductividad: Number,
-  ph: Number,
+  pH: Number,
   nitrogeno: Number,
   fosforo: Number,
   potasio: Number,
-  bateria: Number,
-  fecha: { type: Date, default: Date.now },
+  bateria: Number
 });
-
 const Sensor = mongoose.model("Sensor", sensorSchema);
 
-// ==============================
-// 🔹 Conexión al Broker MQTT
-// ==============================
-const mqttClient = mqtt.connect("mqtt://broker.hivemq.com:1883");
-
-mqttClient.on("connect", () => {
-  console.log("✅ Conectado al broker MQTT");
-  mqttClient.subscribe("dan/esp32/datos", (err) => {
-    if (err) console.error("❌ Error suscribiéndose al topic:", err);
-    else console.log("📡 Suscrito al topic 'dan/esp32/datos'");
-  });
-});
-
-mqttClient.on("error", (err) => {
-  console.error("❌ Error MQTT:", err);
-});
-
-// ==============================
-// 🔹 Recepción de datos MQTT
-// ==============================
-mqttClient.on("message", async (topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    console.log("📥 Mensaje recibido:", data);
-
-    const sensor = new Sensor({
-      humedad: data.humedad,
-      temperatura: data.temperatura,
-      conductividad: data.conductividad,
-      ph: data.ph,
-      nitrogeno: data.nitrogeno,
-      fosforo: data.fosforo,
-      potasio: data.potasio,
-      bateria: data.bateria,
-    });
-
-    await sensor.save();
-    console.log("💾 Guardado en MongoDB");
-
-    // Emitir en tiempo real a los clientes
-    io.emit("nuevoDato", data);
-    console.log("📡 Dato enviado en tiempo real a los clientes");
-  } catch (err) {
-    console.error("❌ Error procesando mensaje MQTT:", err);
-  }
-});
-
-// ==============================
-// 🔹 Conexión Socket.IO
-// ==============================
-io.on("connection", async (socket) => {
-  console.log("🖥️ Cliente conectado a Socket.IO");
-
-  // Enviar los últimos 10 registros al conectarse
-  try {
-    const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(10).lean();
-    socket.emit("historico", ultimos.reverse());
-  } catch (err) {
-    console.error("❌ Error enviando histórico:", err);
-  }
-
-  socket.on("disconnect", () => console.log("❌ Cliente desconectado"));
-});
-
-// ==============================
-// 🔹 Endpoints REST
-// ==============================
-
-// Últimos 10 registros
+// --- API REST ---
 app.get("/api/data/latest", async (req, res) => {
-  try {
-    const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
-    res.json(data.reverse());
-  } catch (err) {
-    res.status(500).json({ error: "Error obteniendo los datos" });
-  }
+  const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
+  res.json(data.reverse());
 });
 
-// Todos los registros
 app.get("/api/data/all", async (req, res) => {
-  try {
-    const data = await Sensor.find().sort({ fecha: -1 }).lean();
-    res.json(data.reverse());
-  } catch (err) {
-    console.error("❌ Error obteniendo todos los datos:", err);
-    res.status(500).json({ error: "Error obteniendo los datos" });
-  }
+  const data = await Sensor.find().sort({ fecha: -1 });
+  res.json(data);
 });
 
-// ==============================
-// 🔹 Iniciar servidor
-// ==============================
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
+// --- Socket.IO ---
+io.on("connection", async (socket) => {
+  console.log("🖥️ Cliente web conectado");
+  const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(10).lean();
+  socket.emit("historico", ultimos.reverse());
+});
+
+// --- Simulación MQTT (si no hay broker real) ---
+setInterval(async () => {
+  const randomData = {
+    fecha: new Date(),
+    humedad: Math.random() * 100,
+    temperatura: 20 + Math.random() * 10,
+    conductividad: Math.random() * 2,
+    pH: 6 + Math.random() * 2,
+    nitrogeno: Math.random() * 50,
+    fosforo: Math.random() * 30,
+    potasio: Math.random() * 40,
+    bateria: 3.7 + Math.random() * 0.3
+  };
+  const doc = new Sensor(randomData);
+  await doc.save();
+  io.emit("nuevoDato", randomData);
+}, 10000);
+
+const PORT = 3000;
+server.listen(PORT, () => console.log(`✅ Servidor escuchando en http://localhost:${PORT}`));
