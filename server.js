@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
-// Socket.IO con configuración para Render
+// Socket.IO para tiempo real
 const io = new Server(httpServer, {
   cors: {
     origin: "*",
@@ -94,7 +94,7 @@ mqttClient.on("message", async (topic, message) => {
     await sensor.save();
     console.log("💾 Guardado en MongoDB");
 
-    // Emitir al navegador conectado
+    // Emitir en tiempo real a los clientes
     io.emit("nuevoDato", data);
     console.log("📡 Dato enviado en tiempo real a los clientes");
   } catch (err) {
@@ -105,19 +105,41 @@ mqttClient.on("message", async (topic, message) => {
 // ==============================
 // 🔹 Conexión Socket.IO
 // ==============================
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   console.log("🖥️ Cliente conectado a Socket.IO");
+
+  // Enviar los últimos 10 registros al conectarse
+  try {
+    const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(10).lean();
+    socket.emit("historico", ultimos.reverse());
+  } catch (err) {
+    console.error("❌ Error enviando histórico:", err);
+  }
+
   socket.on("disconnect", () => console.log("❌ Cliente desconectado"));
 });
 
 // ==============================
 // 🔹 Endpoints REST
 // ==============================
+
+// Últimos 10 registros
 app.get("/api/data/latest", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
     res.json(data.reverse());
   } catch (err) {
+    res.status(500).json({ error: "Error obteniendo los datos" });
+  }
+});
+
+// Todos los registros
+app.get("/api/data/all", async (req, res) => {
+  try {
+    const data = await Sensor.find().sort({ fecha: -1 }).lean();
+    res.json(data.reverse());
+  } catch (err) {
+    console.error("❌ Error obteniendo todos los datos:", err);
     res.status(500).json({ error: "Error obteniendo los datos" });
   }
 });
