@@ -107,9 +107,9 @@ io.on("connection", async (socket) => {
   console.log("🖥️ Cliente conectado a Socket.IO");
 
   try {
-    // Envía los 10 registros más recientes directamente en orden DESC
-    const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(10).lean();
-    socket.emit("historico", ultimos); // sin reverse()
+    // 🔹 Ahora envía los 20 registros más recientes
+    const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(20).lean();
+    socket.emit("historico", ultimos); // orden DESC (más reciente primero)
   } catch (err) {
     console.error("❌ Error enviando histórico:", err);
   }
@@ -121,10 +121,10 @@ io.on("connection", async (socket) => {
 // 🔹 Endpoints REST
 // ==============================
 
-// Últimos 10 registros (más recientes primero)
+// Últimos 20 registros (más recientes primero)
 app.get("/api/data/latest", async (req, res) => {
   try {
-    const data = await Sensor.find().sort({ fecha: -1 }).limit(10);
+    const data = await Sensor.find().sort({ fecha: -1 }).limit(20);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: "Error obteniendo los datos" });
