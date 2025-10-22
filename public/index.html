@@ -16,15 +16,20 @@
     }
     .charts {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 10px;
-      padding: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); /* 🔹 Más grande */
+      gap: 15px;
+      padding: 15px;
     }
     .chart-card {
       background: #102a3c;
       border-radius: 12px;
-      padding: 10px;
+      padding: 15px;
       box-shadow: 0 0 8px #00ffff33;
+      height: 350px; /* 🔹 Altura aumentada */
+    }
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
     }
     table {
       width: 100%;
@@ -66,7 +71,7 @@
   </style>
 </head>
 <body>
-  <h2 style="text-align:center; color:#00e5ff; margin:10px;">📊 Panel de Sensores</h2>
+  <h2 style="text-align:center; color:#00e5ff; margin:10px;">Panel de Sensores</h2>
 
   <div class="charts">
     <div class="chart-card"><canvas id="humedad"></canvas></div>
@@ -109,6 +114,18 @@
     const LIVE_BUFFER_MAX = 30;
     const TABLE_REFRESH_MS = 30000;
 
+    // 🔹 Colores personalizados para cada variable
+    const chartColors = {
+      humedad: "#4fc3f7",
+      temperatura: "#ff7043",
+      conductividad: "#ba68c8",
+      pH: "#81c784",
+      nitrogeno: "#fdd835",
+      fosforo: "#ef5350",
+      potasio: "#42a5f5",
+      bateria: "#8d6e63"
+    };
+
     const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
     const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria"];
     const charts = {};
@@ -117,10 +134,27 @@
       const el = document.getElementById(id);
       if(!el) return;
       const ctx = el.getContext("2d");
+      const color = chartColors[id] || "#00ffff";
       charts[id] = new Chart(ctx, {
         type: "line",
-        data: { labels: [], datasets: [{ label, data: [], borderColor: "#00ffff", backgroundColor: "rgba(0,255,255,0.15)", fill:true }] },
-        options: { responsive:true, plugins:{ legend:{ display:true } }, scales:{ x:{ display:true }, y:{ display:true } } }
+        data: {
+          labels: [],
+          datasets: [{
+            label,
+            data: [],
+            borderColor: color,
+            backgroundColor: color + "33",
+            fill:true
+          }]
+        },
+        options: {
+          responsive:true,
+          plugins:{ legend:{ display:true, labels:{ color:"#fff" } } },
+          scales:{
+            x:{ ticks:{ color:"#fff" } },
+            y:{ ticks:{ color:"#fff" } }
+          }
+        }
       });
     }
     variables.forEach(v => createChart(v, v.charAt(0).toUpperCase() + v.slice(1)));
@@ -181,7 +215,7 @@
         allData = await res.json();
         allData = allData
           .map(d => ({ ...d, fecha: new Date(d.fecha) }))
-          .sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); // más reciente primero
+          .sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); 
         renderTable();
       } catch (err) {
         console.error("❌ Error cargando todos los datos:", err);
