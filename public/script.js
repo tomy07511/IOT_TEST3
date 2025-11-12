@@ -1,235 +1,174 @@
-// ---- CONFIG ----
-const SOCKET_CONNECT_ORIGIN = window.location.origin;
-const MQTT_TIMEOUT_MS = 20000;
-const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
+const socket = io();
 
-const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
-
-const variables = [
-  "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
-];
-
-const colorMap = {
-  humedad:"#00bcd4", temperatura:"#ff7043", conductividad:"#7e57c2", ph:"#81c784",
-  nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
-};
-
+// === Referencias ===
 const charts = {};
+const variables = ["temperatura", "humedad", "presion"];
+const chartContainers = document.getElementById("charts");
+
+// === Configuración ===
+const MQTT_TIMEOUT_MS = 5000;
+let lastMqttTimestamp = 0;
 let liveBuffer = [];
 let allData = [];
-let lastMqttTimestamp = 0;
 
-// ---- CREAR GRÁFICOS ----
-function createCharts() {
-  variables.forEach(v => {
-    const el = document.getElementById(v);
-    if(!el) return;
+// === Crear contenedores ===
+variables.forEach(v => {
+  const card = document.createElement("div");
+  card.className = "p-4 bg-white rounded-2xl shadow-md mb-6";
 
-    // contenedor con scroll horizontal real
-    const wrapper = document.createElement("div");
-    wrapper.style.overflowX = "auto";
-    wrapper.style.width = "100%";
-    wrapper.style.paddingBottom = "10px";
-    el.parentElement.insertBefore(wrapper, el);
-    wrapper.appendChild(el);
+  card.innerHTML = `
+    <h2 class="text-lg font-semibold mb-2 capitalize">${v}</h2>
+    <div class="flex gap-2 mb-2">
+      <button class="bg-blue-500 text-white px-3 py-1 rounded" id="btnLive-${v}">Datos actuales</button>
+      <button class="bg-gray-500 text-white px-3 py-1 rounded" id="btnHist-${v}">Histórico</button>
+      <button class="bg-red-500 text-white px-3 py-1 rounded" id="btnReset-${v}">Resetear zoom</button>
+    </div>
+    <div class="overflow-x-auto">
+      <canvas id="chart-${v}" height="250"></canvas>
+    </div>
+  `;
 
-    const ctx = el.getContext('2d');
-    charts[v] = new Chart(ctx, {
-      type:'line',
-      data:{labels:[],datasets:[{
-        label:v,
-        data:[],
-        borderColor:colorMap[v],
-        backgroundColor:colorMap[v]+'33',
-        fill:true,
-        tension:0.25,
-        pointRadius:5,        // 🔹 más grandes
-        pointHoverRadius:7
-      }]},
-      options:{
-        responsive:true,
-        maintainAspectRatio:false,
-        interaction:{mode:'nearest',intersect:false},
-        animation:false,
-        plugins:{
-          legend:{labels:{color:'#fff'}},
-          zoom:{
-            pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{
-              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
-              mode:'x',
-              onZoomComplete({chart}) {
-                const wrapper = chart.canvas.parentElement;
-                wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth) / 2;
-              }
+  chartContainers.appendChild(card);
+});
+
+// === Crear gráfica ===
+function createChart(ctx, label) {
+  return new Chart(ctx, {
+    type: "line",
+    data: { labels: [], datasets: [{
+      label,
+      data: [],
+      borderWidth: 2,
+      pointRadius: 3,
+      borderColor: getRandomColor(),
+      tension: 0.3
+    }]},
+    options: {
+      animation: { duration: 600, easing: "easeOutQuart" },
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        zoom: {
+          pan: { enabled: true, mode: "x" },
+          zoom: {
+            drag: { enabled: true, backgroundColor: "rgba(0,0,0,0.1)" },
+            mode: "x"
+          }
+        },
+        legend: { display: false }
+      },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 15,
+            callback: function (val, i, ticks) {
+              const total = this.chart.data.labels.length;
+              return total <= 15 ? this.getLabelForValue(val) : "";
             }
           }
         },
-        scales:{
-          x:{
-            ticks:{
-              color:'#ccc',
-              callback:function(val,index){ 
-                const total = this.chart.data.labels.length;
-                // 🔹 Mostrar fechas si <=15 o si está en zoom cercano
-                return (total <= 15) ? this.chart.data.labels[index] : '';
-              }
-            },
-            grid:{color:'#1e3a4c'}
-          },
-          y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
-        }
+        y: { beginAtZero: true }
       }
-    });
+    }
+  });
+}
 
-    charts[v].displayMode = 'live';
+// === Generar color aleatorio ===
+function getRandomColor() {
+  return `hsl(${Math.random() * 360}, 80%, 50%)`;
+}
 
-    const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
+// === Inicializar charts ===
+variables.forEach(v => {
+  const ctx = document.getElementById(`chart-${v}`).getContext("2d");
+  charts[v] = {
+    chart: createChart(ctx, v),
+    displayMode: "live"
+  };
 
-    const btnLive = document.createElement('button');
-    btnLive.textContent = 'Datos actuales';
-    btnLive.className='btn';
-    btnLive.style.marginLeft='6px';
-    btnLive.disabled = true;
-    btnLive.onclick = () => {
-      charts[v].displayMode = 'live';
-      btnLive.disabled = true;
-      btnHist.disabled = false;
-      charts[v].resetZoom();
-      renderChart(v, true);
-    };
+  document.getElementById(`btnReset-${v}`).onclick = () => {
+    charts[v].chart.resetZoom();
+  };
 
-    const btnHist = document.createElement('button');
-    btnHist.textContent = 'Histórico';
-    btnHist.className='btn';
-    btnHist.style.marginLeft='6px';
-    btnHist.disabled=false;
-    btnHist.onclick = () => {
-      charts[v].displayMode = 'historical';
-      btnHist.disabled = true;
-      btnLive.disabled = false;
-      charts[v].resetZoom();
+  document.getElementById(`btnLive-${v}`).onclick = () => {
+    charts[v].displayMode = "live";
+    renderLiveData(v);
+  };
+
+  document.getElementById(`btnHist-${v}`).onclick = async () => {
+    charts[v].displayMode = "historic";
+    const mongoData = await loadAllFromMongo(v);
+    if (mongoData.length > 0) {
+      allData = mongoData;
       renderChart(v);
-      const wrapper = charts[v].canvas.parentElement;
-      wrapper.scrollLeft = 0; // 🔹 al inicio del histórico
-    };
+      // Activa scroll horizontal visible
+      const canvas = document.getElementById(`chart-${v}`);
+      canvas.parentElement.style.overflowX = "scroll";
+      canvas.parentElement.scrollLeft = canvas.parentElement.scrollWidth / 2;
+    }
+  };
+});
 
-    const actionsDiv = btnReset.parentElement;
-    actionsDiv.appendChild(btnLive);
-    actionsDiv.appendChild(btnHist);
-  });
+// === Renderizar ===
+function renderChart(v) {
+  const c = charts[v].chart;
+  c.data.labels = allData.map(d => d.fecha);
+  c.data.datasets[0].data = allData.map(d => d.valor);
+  c.update("active");
 }
 
-// ---- RENDER ----
-function renderChart(v, autoScroll=false){
-  const chart = charts[v];
-  if(!chart) return;
-
-  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
-  if(!Array.isArray(dataArray)||!dataArray.length) return;
-
-  const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
-  const dataset = dataArray.map(d => d[v] ?? null);
-
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = dataset;
-  chart.update('none');
-
-  // Si se cambia a datos actuales, centramos la vista
-  if(autoScroll){
-    const wrapper = chart.canvas.parentElement;
-    wrapper.scrollLeft = wrapper.scrollWidth; 
-  }
+function renderLiveData(v) {
+  const c = charts[v].chart;
+  const labels = liveBuffer.map(d => d.fecha);
+  const data = liveBuffer.map(d => d.valor);
+  c.data.labels = labels;
+  c.data.datasets[0].data = data;
+  c.update("active");
 }
 
-// ---- SOCKET ----
-socket.on("connect", () => console.log("🔌 Socket conectado"));
-socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
+// === Cargar de Mongo ===
+async function loadAllFromMongo(variable) {
+  const res = await fetch(`/api/historico/${variable}`);
+  if (!res.ok) return [];
+  return res.json();
+}
 
-socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha? new Date(data.fecha): new Date()};
-  liveBuffer.push(record);
-  if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
+// === Socket.io ===
+socket.on("sensorData", data => {
   lastMqttTimestamp = Date.now();
+  liveBuffer.push(data);
+  if (liveBuffer.length > 15) liveBuffer.shift();
 
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='live') renderChart(v);
-  });
-
-  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
+  const v = data.variable;
+  if (charts[v] && charts[v].displayMode === "live") renderLiveData(v);
 });
 
-socket.on("historico", (data) => {
-  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='historical') renderChart(v);
-  });
-});
-
-// ---- MONGO ----
-async function loadLatestFromMongo(){
-  try{
-    const res = await fetch('/api/data/latest');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const data = await res.json();
-    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);return [];}
-}
-
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    allData = await res.json();
-    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);}
-}
-
-// ---- MAPA ----
-let map, marker;
-function initMap(){
-  map = L.map('map').setView([0,0],2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
-}
-
-function updateMap(lat,lon){
-  if(!map||!marker||lat===undefined||lon===undefined) return;
-  marker.setLatLng([lat,lon]);
-  map.setView([lat,lon],14);
-  marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
-}
-
-// ---- CICLOS ----
-async function refreshDisplay(){
-  const now = Date.now();
-  const diff = now-lastMqttTimestamp;
-
-  for(const v of variables){
-    if(charts[v].displayMode==='live'){
-      if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-        renderChart(v);
+// === Actualización automática ===
+setInterval(async () => {
+  const diff = Date.now() - lastMqttTimestamp;
+  for (const v of variables) {
+    if (charts[v].displayMode === "live") {
+      if (lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0) {
+        renderLiveData(v);
       } else {
-        const mongoLatest = await loadLatestFromMongo();
-        if(mongoLatest.length>0){
+        const mongoLatest = await loadAllFromMongo(v);
+        if (mongoLatest.length > 0) {
           allData = mongoLatest;
           renderChart(v);
         }
       }
     }
   }
-}
+}, 3000);
 
-// ---- INICIO ----
-(async function init(){
-  initMap();
-  createCharts();
-  await loadAllFromMongo();
-  const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
-
-  setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
+// === Iniciar ===
+(async function init() {
+  for (const v of variables) {
+    const mongoLatest = await loadAllFromMongo(v);
+    if (mongoLatest.length > 0) {
+      allData = mongoLatest;
+      renderChart(v);
+    }
+  }
 })();
