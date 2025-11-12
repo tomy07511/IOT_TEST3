@@ -1,193 +1,228 @@
 // ---- CONFIG ----
 const SOCKET_CONNECT_ORIGIN = window.location.origin;
 const MQTT_TIMEOUT_MS = 20000;
-const LIVE_BUFFER_MAX = 60;  // aumentar buffer si quieres más puntos en tiempo real
+const LIVE_BUFFER_MAX = 30;
 const TABLE_REFRESH_MS = 30000;
 
-// ---- SOCKET.IO ----
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
-// ---- VARIABLES ----
 const variables = [
   "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
 ];
+
 const colorMap = {
   humedad:"#00bcd4", temperatura:"#ff7043", conductividad:"#7e57c2", ph:"#81c784",
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-let charts = {};
+const charts = {};
 let liveBuffer = [];
-let lastMqttTimestamp = 0;
 let allData = [];
-let chartModes = {}; // true = tiempo real, false = histórico
+let lastMqttTimestamp = 0;
 
-// ---- CREAR GRÁFICAS ----
-function createCharts(){
-  const container = document.getElementById("chartsGrid");
-  variables.forEach(v=>{
-    const card = document.createElement("div");
-    card.className="card";
-    card.innerHTML = `
-      <h4>${v.charAt(0).toUpperCase()+v.slice(1)}</h4>
-      <canvas id="chart_${v}"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="${v}">Reset Zoom</button>
-        <button class="btn" data-mode="${v}" data-type="realtime">Datos actuales</button>
-        <button class="btn" data-mode="${v}" data-type="historico">Histórico</button>
-      </div>
-    `;
-    container.appendChild(card);
+// ---- CREAR GRÁFICOS ----
+function createCharts() {
+  variables.forEach(v => {
+    const el = document.getElementById(v);
+    if(!el) return;
+    const ctx = el.getContext('2d');
 
-    const ctx = document.getElementById(`chart_${v}`).getContext('2d');
-    charts[v] = new Chart(ctx,{
-      type:'line',
-      data:{labels:[],datasets:[{label:v,data:[],borderColor:colorMap[v],backgroundColor:colorMap[v]+'33',fill:true,tension:0.25,pointRadius:2}]},
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        interaction:{mode:'nearest',intersect:false},
-        plugins:{
-          legend:{labels:{color:'#fff'}},
-          zoom:{
-            pan:{enabled:true,mode:'x',modifierKey:'ctrl', onPan:()=>{updateLabels(v);}},
-            zoom:{
-              wheel:{enabled:true},
-              pinch:{enabled:true}, // activar pinch en móvil
-              drag:{enabled:true, borderColor:'rgba(0,255,255,0.3)', backgroundColor:'rgba(0,255,255,0.15)'},
-              mode:'x',
-              onZoomComplete:()=>{updateLabels(v);}
-            }
-          }
+    charts[v] = {
+      chart: new Chart(ctx, {
+        type:'line',
+        data:{
+          labels:[],
+          datasets:[{
+            label:v,
+            data:[],
+            borderColor:colorMap[v],
+            backgroundColor:colorMap[v]+'33',
+            fill:true,
+            tension:0.25,
+            pointRadius:4 // un poquito más grande
+          }]
         },
-        scales:{
-          x:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}},
-          y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
+        options:{
+          responsive:true,
+          maintainAspectRatio:false,
+          interaction:{mode:'nearest',intersect:false},
+          animation:{duration:400,easing:'linear'},
+          plugins:{
+            legend:{labels:{color:'#fff'}},
+            zoom:{
+              pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
+              zoom:{
+                drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
+                mode:'x'
+              }
+            }
+          },
+          scales:{
+            x:{
+              ticks:{
+                color:'#ccc',
+                callback:function(val,index){
+                  return this.chart.data.labels.length <= 15 ? this.chart.data.labels[index] : '';
+                }
+              },
+              grid:{color:'#1e3a4c'}
+            },
+            y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
+          }
         }
-      }
-    });
+      }),
+      displayMode:'live'
+    };
 
-    chartModes[v] = true; // por defecto modo tiempo real
+    const btnReset = document.querySelector(`button[data-reset="${v}"]`);
+    if(btnReset) btnReset.onclick=()=>charts[v].chart.resetZoom();
+
+    const container = btnReset.parentElement;
+
+    const btnLive = document.createElement('button');
+    btnLive.textContent='Datos actuales';
+    btnLive.className='btn';
+    btnLive.style.marginLeft='6px';
+    btnLive.disabled = true; // por defecto live activo
+    btnLive.onclick = () => {
+      charts[v].displayMode='live';
+      btnLive.disabled=true;
+      btnHist.disabled=false;
+      renderChart(v);
+    };
+
+    const btnHist = document.createElement('button');
+    btnHist.textContent='Histórico';
+    btnHist.className='btn';
+    btnHist.style.marginLeft='6px';
+    btnHist.disabled=false;
+    btnHist.onclick = () => {
+      charts[v].displayMode='historical';
+      btnHist.disabled=true;
+      btnLive.disabled=false;
+      renderChart(v);
+    };
+
+    container.appendChild(btnLive);
+    container.appendChild(btnHist);
   });
 }
 
-// ---- FUNCIONES AUX ----
-function updateLabels(varName){
-  const chart = charts[varName];
-  if(!chart) return;
-  const len = chart.data.labels.length;
-  if(len <= 15){
-    chart.options.scales.x.ticks.display = true;
-    chart.update('none');
+// ---- FUNCIONES DE GRAFICOS ----
+function renderChart(v){
+  const chartObj = charts[v];
+  if(!chartObj) return;
+  const chart = chartObj.chart;
+  const mode = chartObj.displayMode;
+  const dataArray = mode==='live'? liveBuffer : allData;
+  if(!Array.isArray(dataArray) || !dataArray.length) return;
+
+  const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
+
+  if(mode==='live' && dataArray===liveBuffer){
+    const lastRecord = dataArray[dataArray.length-1];
+    if(lastRecord){
+      chart.data.labels.push(new Date(lastRecord.fecha).toLocaleString());
+      chart.data.datasets[0].data.push(lastRecord[v] ?? null);
+      if(chart.data.labels.length>LIVE_BUFFER_MAX){
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = dataArray.map(d=>d[v]??null);
+    chart.update();
   }
 }
 
-// ---- RENDERIZAR ----
-function renderChart(varName, dataArray){
-  if(!charts[varName] || !Array.isArray(dataArray)) return;
-  const chart = charts[varName];
-  const labels = dataArray.map(d=>new Date(d.fecha));
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = dataArray.map(d=>d[varName]??null);
-
-  // mostrar fechas si ≤15
-  chart.options.scales.x.ticks.display = dataArray.length <= 15;
-  chart.update();
-}
-
-// ---- RENDER TODOS ----
 function renderChartsFromArray(dataArray){
-  variables.forEach(v=>{
-    if(chartModes[v]) renderChart(v, dataArray);
-  });
+  variables.forEach(v => renderChart(v));
 }
 
 // ---- SOCKET ----
-socket.on("connect",()=>console.log("Socket conectado"));
-socket.on("disconnect",()=>console.log("Socket desconectado"));
+socket.on("connect", () => console.log("🔌 Socket conectado"));
+socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
 
-socket.on("nuevoDato",(data)=>{
-  const rec={...data,fecha:data.fecha?new Date(data.fecha):new Date()};
-  liveBuffer.push(rec);
+socket.on("nuevoDato", (data) => {
+  const record = {...data, fecha:data.fecha? new Date(data.fecha): new Date()};
+  liveBuffer.push(record);
   if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
-  lastMqttTimestamp=Date.now();
+  lastMqttTimestamp = Date.now();
 
-  // actualizar solo gráficos en modo real
   variables.forEach(v=>{
-    if(chartModes[v]) renderChart(v, liveBuffer);
+    if(charts[v].displayMode==='live') renderChart(v);
   });
 
-  // actualizar mapa
   if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
 });
 
-socket.on("historico",(arr)=>{
-  allData=arr.map(d=>({...d,fecha:new Date(d.fecha)}));
-  // actualizar solo gráficos en modo histórico
+socket.on("historico", (data) => {
+  allData = data.map(d=>({...d,fecha:new Date(d.fecha)}));
   variables.forEach(v=>{
-    if(!chartModes[v]) renderChart(v, allData);
+    if(charts[v].displayMode==='historical') renderChart(v);
   });
 });
 
-// ---- BOTONES INDIVIDUALES ----
-document.addEventListener('click',e=>{
-  const btn = e.target.closest('button');
-  if(!btn) return;
+// ---- MONGO ----
+async function loadLatestFromMongo(){
+  try{
+    const res = await fetch('/api/data/latest');
+    if(!res.ok) throw new Error('Error '+res.status);
+    const data = await res.json();
+    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
+  }catch(e){console.error(e);return [];}
+}
 
-  const reset = btn.dataset.reset;
-  const mode = btn.dataset.mode;
-  const type = btn.dataset.type;
-
-  if(reset){
-    const chart = charts[reset];
-    if(chart){ chart.resetZoom(); updateLabels(reset); }
-  }
-
-  if(mode && type){
-    chartModes[mode] = (type==='realtime');
-    if(chartModes[mode]) renderChart(mode, liveBuffer);
-    else renderChart(mode, allData);
-  }
-});
+async function loadAllFromMongo(){
+  try{
+    const res = await fetch('/api/data/all');
+    if(!res.ok) throw new Error('Error '+res.status);
+    allData = await res.json();
+    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
+  }catch(e){console.error(e);}
+}
 
 // ---- MAPA ----
 let map, marker;
 function initMap(){
-  map=L.map('map').setView([0,0],2);
+  map = L.map('map').setView([0,0],2);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-  marker=L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
+  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
 }
+
 function updateMap(lat,lon){
   if(!map||!marker||lat===undefined||lon===undefined) return;
   marker.setLatLng([lat,lon]);
-  marker.setPopupContent(`📍 Lat: ${lat.toFixed(5)}<br>Lon: ${lon.toFixed(5)}`).openPopup();
   map.setView([lat,lon],14);
+  marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
 }
 
-// ---- CARGA MONGO ----
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error(res.status);
-    const json = await res.json();
-    allData = json.map(d=>({...d,fecha:new Date(d.fecha)}));
-    variables.forEach(v=>{ if(!chartModes[v]) renderChart(v, allData); });
-  }catch(e){console.error(e);}
-}
-
-// ---- REFRESH ----
+// ---- CICLOS ----
 async function refreshDisplay(){
   const now = Date.now();
-  if(lastMqttTimestamp!==0 && (now-lastMqttTimestamp)<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-    variables.forEach(v=>{ if(chartModes[v]) renderChart(v, liveBuffer); });
-  }else{
-    const latest = await fetch('/api/data/latest').then(r=>r.json()).then(j=>j.map(d=>({...d,fecha:new Date(d.fecha)}))).catch(()=>[]);
-    liveBuffer = latest;
-    variables.forEach(v=>{ if(chartModes[v]) renderChart(v, liveBuffer); });
-  }
+  const diff = now-lastMqttTimestamp;
+
+  variables.forEach(v=>{
+    if(charts[v].displayMode==='live'){
+      if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0) renderChart(v);
+      else{
+        const mongoLatest = await loadLatestFromMongo();
+        if(mongoLatest.length>0){allData=mongoLatest; renderChart(v);}
+      }
+    }
+  });
 }
 
-// ---- INIT ----
-initMap();
-createCharts();
-setInterval(refreshDisplay,5000);
-setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
+// ---- INICIO ----
+(async function init(){
+  initMap();
+  createCharts();
+  await loadAllFromMongo();
+  const latest = await loadLatestFromMongo();
+  if(latest.length) renderChartsFromArray(latest);
+
+  setInterval(refreshDisplay,5000);
+  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
+})();
