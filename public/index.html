@@ -1,163 +1,142 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Panel de Monitoreo</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Panel de Sensores</title>
+
+  <!-- Chart.js + Zoom plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+  <!-- Leaflet + Fullscreen plugin -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+  <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
+
+  <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  />
+
   <style>
-    body {
-      background-color: #f4f6f9;
-      color: #333;
+    :root{
+      --bg:#0b1d2a;
+      --card:#102a3c;
+      --accent:#00e5ff;
+      --muted:#1e3a4c;
+      --text:#eaf6f8;
     }
-
-    .container {
-      margin-top: 20px;
+    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
+    header{padding:12px 18px;text-align:center;color:var(--accent);}
+    .grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap:16px;
+      padding:16px;
+      align-items:start;
     }
-
-    #map {
-      height: 400px;
-      width: 100%;
-      border-radius: 10px;
-      margin-bottom: 20px;
+    .card {
+      background:var(--card);
+      border-radius:12px;
+      padding:12px;
+      box-shadow:0 6px 18px rgba(0,229,255,0.06);
+      min-height:120px;
+      position:relative;
+      overflow:hidden;
     }
-
-    .fullscreen {
-      position: fixed !important;
-      top: 0;
-      left: 0;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 9999;
+    .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
+    canvas{width:100% !important;height:220px !important; display:block}
+    .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .btn {
+      background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
     }
-
-    .chart-container {
-      position: relative;
-      height: 400px;
+    #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
+    #map{width:100%;height:420px;border-radius:8px}
+    /* 🔹 Botón flotante */
+    #btnHistoricos {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--accent);
+      color: #001;
+      border: none;
+      border-radius: 50px;
+      padding: 10px 18px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0,229,255,0.5);
+      transition: all 0.3s ease;
+      z-index: 999;
+    }
+    #btnHistoricos:hover {
+      background: #00b4cc;
+      box-shadow: 0 0 15px rgba(0,229,255,0.8);
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1 class="text-center mb-4">🌿 Panel de Monitoreo de Sensores</h1>
+  <header><h2>Panel de Sensores — IoT</h2></header>
 
-    <!-- Botones principales -->
-    <div class="text-center mb-3">
-      <button id="fullscreenMap" class="btn btn-success me-2">Pantalla completa del mapa</button>
-      <button id="historicosBtn" class="btn btn-primary">📊 Históricos / Base de Datos</button>
-    </div>
-
-    <!-- Mapa -->
+  <!-- MAP -->
+  <div id="mapWrap" class="card">
+    <h4>Ubicación GPS</h4>
     <div id="map"></div>
-
-    <!-- Gráfica -->
-    <div class="chart-container mb-5">
-      <canvas id="grafica"></canvas>
-    </div>
   </div>
 
-  <!-- Scripts -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- GRÁFICAS -->
+  <div class="grid" id="chartsGrid">
+    <div class="card"><h4>Humedad</h4><canvas id="humedad"></canvas><div class="chart-actions"><button class="btn" data-reset="humedad">Reset Zoom</button></div></div>
+    <div class="card"><h4>Temperatura</h4><canvas id="temperatura"></canvas><div class="chart-actions"><button class="btn" data-reset="temperatura">Reset Zoom</button></div></div>
+    <div class="card"><h4>Conductividad</h4><canvas id="conductividad"></canvas><div class="chart-actions"><button class="btn" data-reset="conductividad">Reset Zoom</button></div></div>
+    <div class="card"><h4>pH</h4><canvas id="ph"></canvas><div class="chart-actions"><button class="btn" data-reset="ph">Reset Zoom</button></div></div>
+  </div>
 
+  <!-- 🔹 Botón para abrir los históricos -->
+  <button id="btnHistoricos" onclick="window.open('historicos.html', '_blank')">
+    📜 Históricos / Base de Datos
+  </button>
+
+  <!-- Tu script completo -->
   <script>
-    const socket = io();
-
-    // === 📍 MAPA ===
-    const map = L.map("map").setView([9.288261, -75.410559], 13);
-    L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
-      maxZoom: 20,
-      subdomains: ["mt0", "mt1", "mt2", "mt3"],
+    // ================= MAPA =================
+    const map = L.map('map', { fullscreenControl: true }).setView([4.711, -74.072], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    const marker = L.marker([9.288261, -75.410559]).addTo(map);
+    const marker = L.marker([4.711, -74.072]).addTo(map);
 
-    // === 🔹 BOTÓN DE PANTALLA COMPLETA ===
-    const mapDiv = document.getElementById("map");
-    document.getElementById("fullscreenMap").addEventListener("click", () => {
-      mapDiv.classList.toggle("fullscreen");
-      map.invalidateSize();
+    // ================= SOCKET =================
+    const socket = io();
+
+    socket.on("nuevoDato", (data) => {
+      console.log("Nuevo dato:", data);
     });
 
-    // === 🔹 BOTÓN DE HISTÓRICOS ===
-    document.getElementById("historicosBtn").addEventListener("click", () => {
-      window.open("/historicos", "_blank");
-    });
+    // ================= CHARTS =================
+    const crearGrafica = (id, etiqueta) => {
+      const ctx = document.getElementById(id).getContext('2d');
+      return new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: etiqueta, data: [], borderColor: '#00e5ff', fill: false }] },
+        options: {
+          responsive: true,
+          plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } } },
+          scales: { x: { ticks: { color: "#aaa" } }, y: { ticks: { color: "#aaa" } } }
+        }
+      });
+    };
 
-    // === 📊 GRÁFICA ===
-    const ctx = document.getElementById("grafica").getContext("2d");
-    const grafica = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: "Temperatura (°C)",
-            borderColor: "red",
-            data: [],
-            tension: 0.2,
-          },
-          {
-            label: "Humedad (%)",
-            borderColor: "blue",
-            data: [],
-            tension: 0.2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        interaction: {
-          mode: "x",
-        },
-        plugins: {
-          zoom: {
-            zoom: {
-              wheel: {
-                enabled: true,
-              },
-              pinch: {
-                enabled: true,
-              },
-              mode: "xy",
-            },
-            pan: {
-              enabled: true,
-              mode: "xy",
-            },
-          },
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-          },
-        },
-      },
-    });
+    const charts = {
+      humedad: crearGrafica("humedad", "Humedad (%)"),
+      temperatura: crearGrafica("temperatura", "Temperatura (°C)"),
+      conductividad: crearGrafica("conductividad", "Conductividad (µS/cm)"),
+      ph: crearGrafica("ph", "pH"),
+    };
 
-    // === 📡 RECIBIR DATOS EN TIEMPO REAL ===
-    socket.on("nuevo-dato", (data) => {
-      marker.setLatLng([data.latitud, data.longitud]);
-      map.panTo([data.latitud, data.longitud]);
-
-      grafica.data.labels.push(new Date().toLocaleTimeString());
-      grafica.data.datasets[0].data.push(data.temperatura);
-      grafica.data.datasets[1].data.push(data.humedad);
-
-      if (grafica.data.labels.length > 20) {
-        grafica.data.labels.shift();
-        grafica.data.datasets.forEach((d) => d.data.shift());
-      }
-
-      grafica.update();
+    document.querySelectorAll("[data-reset]").forEach(btn=>{
+      btn.onclick=()=>charts[btn.dataset.reset].resetZoom();
     });
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </body>
 </html>
