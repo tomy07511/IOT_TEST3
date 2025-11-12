@@ -150,16 +150,29 @@ function renderTable() {
 }
 
 // ---- CICLOS ----
-async function refreshDisplay(){
+async function refreshDisplay() {
   const now = Date.now();
   const diff = now - lastMqttTimestamp;
-  if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0){
+
+  if (lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0) {
+    // 🔹 Si hay datos recientes del MQTT, actualiza con ellos
     renderChartsFromArray(liveBuffer);
   } else {
+    // 🔹 Si no hay MQTT reciente, intenta obtener de Mongo
     const mongoLatest = await loadLatestFromMongo();
-    if(mongoLatest.length) renderChartsFromArray(mongoLatest);
+
+    if (mongoLatest.length > 0) {
+      renderChartsFromArray(mongoLatest);
+      allData = mongoLatest;
+    } else if (allData.length > 0) {
+      // 🔹 Si Mongo no devuelve nada, conserva lo último mostrado
+      renderChartsFromArray(allData);
+    } else {
+      console.warn("⚠️ No hay datos disponibles para mostrar.");
+    }
   }
 }
+
 
 // ---- INICIO ----
 (async function init(){
