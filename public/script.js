@@ -1,277 +1,145 @@
-// ---- CONFIG ----
-const SOCKET_CONNECT_ORIGIN = window.location.origin;
-const MQTT_TIMEOUT_MS = 20000;
-const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
+const socket = io();
 
-const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
-
-const variables = [
-  "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
-];
-
-const colorMap = {
-  humedad:"#00bcd4", temperatura:"#ff7043", conductividad:"#7e57c2", ph:"#81c784",
-  nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
-};
-
+const variables = ["temperatura", "humedad", "conductividad", "ph", "nitrogeno", "fosforo", "potasio", "bateria", "corriente"];
 const charts = {};
+let mode = {}; // modo individual por variable: 'live' o 'historico'
+let allData = {};
 let liveBuffer = [];
-let allData = [];
 let lastMqttTimestamp = 0;
+const MQTT_TIMEOUT_MS = 10000;
 
-// ---- CREAR GRÁFICOS ----
-function createCharts() {
-  variables.forEach(v => {
-    const el = document.getElementById(v);
-    if(!el) return;
-    const ctx = el.getContext('2d');
+Chart.register(ChartZoom);
 
-    charts[v] = new Chart(ctx, {
-      type:'line',
-      data:{labels:[],datasets:[{
-        label:v,
-        data:[],
-        borderColor:colorMap[v],
-        backgroundColor:colorMap[v]+'33',
-        fill:true,
-        tension:0.25,
-        pointRadius:4
-      }]},
-      options:{
-        responsive:true,
-        maintainAspectRatio:false,
-        interaction:{mode:'nearest',intersect:false},
-        animation:{duration:400,easing:'linear'},
-        plugins:{
-          legend:{labels:{color:'#fff'}},
-          zoom:{
-            pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{
-              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
-              mode:'x'
+variables.forEach(v => (mode[v] = "live"));
+
+// === Crear las gráficas ===
+variables.forEach(v => {
+  const container = document.getElementById(v);
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h3>${v.toUpperCase()}</h3>
+      <div>
+        <button class="resetZoom" data-var="${v}">Resetear Zoom</button>
+        <button class="toggleMode" data-var="${v}">Histórico</button>
+      </div>
+    </div>
+    <div class="chart-scroll" style="overflow-x:auto; width:100%; padding-bottom:10px;">
+      <canvas id="chart-${v}" style="min-width:900px;"></canvas>
+    </div>
+  `;
+
+  const ctx = document.getElementById(`chart-${v}`).getContext("2d");
+  charts[v] = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: v,
+        data: [],
+        borderColor: "#00e5ff",
+        backgroundColor: "rgba(0,229,255,0.1)",
+        borderWidth: 2,
+        pointRadius: 4, // 🔹 Puntos un poco más grandes
+        pointHoverRadius: 6,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          ticks: {
+            display: true,
+            callback: function(value, index, values) {
+              const total = values.length;
+              // 🔹 Mostrar fechas solo si hay <= 15 o si estás muy cerca
+              if (total <= 15 || this.chart._zoomLevel < 2) {
+                const date = new Date(this.getLabelForValue(value));
+                return date.toLocaleString();
+              }
+              return "";
             }
           }
         },
-        scales:{
-          x:{
-            ticks:{
-              color:'#ccc',
-              callback:function(val,index){ 
-                return this.chart.data.labels.length <= 15 ? this.chart.data.labels[index] : '';
-              }
-            },
-            grid:{color:'#1e3a4c'}
+        y: { beginAtZero: true }
+      },
+      plugins: {
+        legend: { labels: { color: "#eaf6f8" } },
+        zoom: {
+          zoom: {
+            drag: { enabled: true },
+            mode: "x",
+            onZoomComplete({ chart }) {
+              const wrapper = chart.canvas.parentElement;
+              wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth) / 2;
+            }
           },
-          y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
+          pan: { enabled: true, mode: "x" }
         }
       }
-    });
-
-    charts[v].displayMode = 'live';
-    charts[v].slider = createSlider(v);
-
-    const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
-
-    const btnLive = document.createElement('button');
-    btnLive.textContent = 'Datos actuales';
-    btnLive.className='btn';
-    btnLive.style.marginLeft='6px';
-    btnLive.disabled = true;
-    btnLive.onclick = () => {
-      charts[v].displayMode = 'live';
-      btnLive.disabled = true;
-      btnHist.disabled = false;
-      charts[v].resetZoom();
-      renderChart(v, true); // 👈 centramos al final
-      charts[v].slider.disabled = true;
-    };
-
-    const btnHist = document.createElement('button');
-    btnHist.textContent = 'Histórico';
-    btnHist.className='btn';
-    btnHist.style.marginLeft='6px';
-    btnHist.disabled=false;
-    btnHist.onclick = () => {
-      charts[v].displayMode = 'historical';
-      btnHist.disabled = true;
-      btnLive.disabled = false;
-      charts[v].resetZoom();
-      renderChart(v);
-      charts[v].slider.disabled = false;
-    };
-
-    const actionsDiv = btnReset.parentElement;
-    actionsDiv.appendChild(btnLive);
-    actionsDiv.appendChild(btnHist);
-    actionsDiv.appendChild(charts[v].slider);
+    }
   });
-}
+});
 
-// ---- CREAR SLIDER ----
-function createSlider(v) {
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.min = 0;
-  slider.max = 100;
-  slider.value = 100;
-  slider.className = 'slider';
-  slider.style.width = '100%';
-  slider.style.marginTop = '6px';
-  slider.disabled = true;
-
-  slider.oninput = () => {
-    const chart = charts[v];
-    if (!chart || chart.displayMode !== 'historical') return;
-
-    const total = chart._allLabels?.length || 0;
-    if (total <= 15) return;
-
-    const range = 15;
-    const endIndex = Math.floor((slider.value / 100) * (total - range));
-    const startIndex = Math.max(0, endIndex - range);
-
-    chart.data.labels = chart._allLabels.slice(startIndex, startIndex + range);
-    chart.data.datasets[0].data = chart._allData.slice(startIndex, startIndex + range);
-    chart.update('none');
-  };
-
-  return slider;
-}
-
-// ---- FUNCIONES DE GRÁFICOS ----
-function renderChart(v, autoScroll=false){
+// === Función para renderizar ===
+function renderChart(v) {
   const chart = charts[v];
-  if(!chart) return;
-  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
-  if(!Array.isArray(dataArray)||!dataArray.length) return;
-
-  const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
-  const dataset = dataArray.map(d => d[v] ?? null);
-
-  // Guardamos copias completas para el slider
-  chart._allLabels = labels;
-  chart._allData = dataset;
-
-  // Mostrar últimos 15 si hay muchos
-  if(chart.displayMode==='historical' && labels.length > 15){
-    const start = labels.length - 15;
-    chart.data.labels = labels.slice(start);
-    chart.data.datasets[0].data = dataset.slice(start);
-  } else {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = dataset;
-  }
-
-  chart.update();
-
-  // Si viene de "Datos actuales", centramos la vista en los últimos
-  if(autoScroll){
-    chart.resetZoom();
-    const len = chart.data.labels.length;
-    if(len > 15){
-      const start = len - 15;
-      chart.data.labels = labels.slice(start);
-      chart.data.datasets[0].data = dataset.slice(start);
-      chart.update();
-    }
-  }
-
-  // Mostrar u ocultar slider
-  if(chart.displayMode==='historical' && chart._allLabels.length>15){
-    chart.slider.disabled = false;
-  } else {
-    chart.slider.disabled = true;
-  }
+  const data = mode[v] === "live" ? liveBuffer : allData[v] || [];
+  chart.data.labels = data.map(d => d.fecha);
+  chart.data.datasets[0].data = data.map(d => d[v]);
+  chart.update("none");
 }
 
-// ---- SOCKET ----
-socket.on("connect", () => console.log("🔌 Socket conectado"));
-socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
+// === Cargar histórico ===
+async function loadHistoric(v) {
+  const res = await fetch(`/api/data/${v}`);
+  const json = await res.json();
+  allData[v] = json.map(d => ({ ...d, fecha: new Date(d.fecha) }));
+  renderChart(v);
+}
 
-socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha? new Date(data.fecha): new Date()};
-  liveBuffer.push(record);
-  if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
+// === MQTT live ===
+socket.on("mqtt-data", d => {
   lastMqttTimestamp = Date.now();
-
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='live') renderChart(v);
-  });
-
-  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
-});
-
-socket.on("historico", (data) => {
-  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='historical') renderChart(v);
+  liveBuffer.push(d);
+  if (liveBuffer.length > 300) liveBuffer.shift();
+  variables.forEach(v => {
+    if (mode[v] === "live") renderChart(v);
   });
 });
 
-// ---- MONGO ----
-async function loadLatestFromMongo(){
-  try{
-    const res = await fetch('/api/data/latest');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const data = await res.json();
-    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);return [];}
-}
+// === Chequear desconexión MQTT ===
+setInterval(() => {
+  const diff = Date.now() - lastMqttTimestamp;
+  if (diff > MQTT_TIMEOUT_MS) return;
+  variables.forEach(v => {
+    if (mode[v] === "live") renderChart(v);
+  });
+}, 2000);
 
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    allData = await res.json();
-    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);}
-}
+// === Botones ===
+document.querySelectorAll(".resetZoom").forEach(btn => {
+  btn.onclick = e => {
+    const v = e.target.dataset.var;
+    charts[v].resetZoom();
+  };
+});
 
-// ---- MAPA ----
-let map, marker;
-function initMap(){
-  map = L.map('map').setView([0,0],2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
-}
-
-function updateMap(lat,lon){
-  if(!map||!marker||lat===undefined||lon===undefined) return;
-  marker.setLatLng([lat,lon]);
-  map.setView([lat,lon],14);
-  marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
-}
-
-// ---- CICLOS ----
-async function refreshDisplay(){
-  const now = Date.now();
-  const diff = now-lastMqttTimestamp;
-
-  for(const v of variables){
-    if(charts[v].displayMode==='live'){
-      if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-        renderChart(v);
-      } else {
-        const mongoLatest = await loadLatestFromMongo();
-        if(mongoLatest.length>0){
-          allData = mongoLatest;
-          renderChart(v);
-        }
-      }
+document.querySelectorAll(".toggleMode").forEach(btn => {
+  btn.onclick = async e => {
+    const v = e.target.dataset.var;
+    if (mode[v] === "live") {
+      mode[v] = "historico";
+      e.target.textContent = "Datos Actuales";
+      await loadHistoric(v);
+      renderChart(v);
+    } else {
+      mode[v] = "live";
+      e.target.textContent = "Histórico";
+      renderChart(v);
+      const wrapper = charts[v].canvas.parentElement;
+      wrapper.scrollLeft = wrapper.scrollWidth; // 🔹 Se centra en los datos actuales
     }
-  }
-}
-
-// ---- INICIO ----
-(async function init(){
-  initMap();
-  createCharts();
-  await loadAllFromMongo();
-  const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
-
-  setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
-})();
+  };
+});
