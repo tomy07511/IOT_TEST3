@@ -27,11 +27,6 @@ function createCharts() {
     if(!el) return;
     const ctx = el.getContext('2d');
 
-    // Contenedor con scroll
-    const container = el.parentElement;
-    container.style.overflowX = "auto";
-    container.style.overflowY = "hidden";
-
     charts[v] = new Chart(ctx, {
       type:'line',
       data:{labels:[],datasets:[{
@@ -52,7 +47,10 @@ function createCharts() {
           legend:{labels:{color:'#fff'}},
           zoom:{
             pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},mode:'x'}
+            zoom:{
+              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
+              mode:'x'
+            }
           }
         },
         scales:{
@@ -70,13 +68,12 @@ function createCharts() {
       }
     });
 
-    // Modo individual por gráfico
     charts[v].displayMode = 'live';
+    charts[v].slider = createSlider(v);
 
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
 
-    // Botones individualizados
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
     btnLive.className='btn';
@@ -86,9 +83,9 @@ function createCharts() {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
-      charts[v].resetZoom(); // resetea zoom
+      charts[v].resetZoom();
       renderChart(v);
-      container.scrollLeft = container.scrollWidth; // ir al final
+      charts[v].slider.disabled = true;
     };
 
     const btnHist = document.createElement('button');
@@ -100,15 +97,50 @@ function createCharts() {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
-      charts[v].resetZoom(); // resetea zoom
+      charts[v].resetZoom();
       renderChart(v);
-      container.scrollLeft = 0; // ir al inicio
+      charts[v].slider.disabled = false;
     };
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
     actionsDiv.appendChild(btnHist);
+    actionsDiv.appendChild(charts[v].slider);
   });
+}
+
+// ---- CREAR SLIDER ----
+function createSlider(v) {
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = 0;
+  slider.max = 100;
+  slider.value = 100;
+  slider.className = 'slider';
+  slider.style.width = '100%';
+  slider.style.marginTop = '6px';
+  slider.disabled = true;
+
+  slider.oninput = () => {
+    const chart = charts[v];
+    if (!chart || chart.displayMode !== 'historical') return;
+
+    const total = chart.data.labels.length;
+    if (total <= 15) return;
+
+    const range = 15; // cantidad visible
+    const endIndex = Math.floor((slider.value / 100) * (total - range));
+    const startIndex = Math.max(0, endIndex - range);
+
+    const visibleLabels = chart.data.labels.slice(startIndex, startIndex + range);
+    const visibleData = chart.data.datasets[0].data.slice(startIndex, startIndex + range);
+
+    chart.data.labels = visibleLabels;
+    chart.data.datasets[0].data = visibleData;
+    chart.update();
+  };
+
+  return slider;
 }
 
 // ---- FUNCIONES DE GRAFICOS ----
@@ -137,10 +169,12 @@ function renderChart(v){
 
   chart.update();
 
-  // Ajustar scroll horizontal según modo
-  const container = chart.canvas.parentElement;
-  if(chart.displayMode==='live') container.scrollLeft = container.scrollWidth;
-  else container.scrollLeft = 0;
+  // Mostrar/ocultar slider
+  if(chart.displayMode==='historical' && chart.data.labels.length>15){
+    chart.slider.disabled = false;
+  } else {
+    chart.slider.disabled = true;
+  }
 }
 
 // ---- SOCKET ----
