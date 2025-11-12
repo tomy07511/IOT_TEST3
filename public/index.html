@@ -4,8 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel de Sensores</title>
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+4XkGkY6o5w5y/9v0u9a3p3r1sZ6m1j2kRk6b0vbg="
+    crossorigin=""
+  />
+
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -14,22 +27,37 @@
       margin: 0;
       padding: 0;
     }
+    header {
+      text-align: center;
+      padding: 12px;
+      background: #07121a;
+      border-bottom: 2px solid #00e5ff33;
+    }
+    header h1 {
+      margin: 0;
+      color: #00e5ff;
+      font-size: 20px;
+    }
     .charts {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); /* 🔹 Más grande */
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
       gap: 15px;
       padding: 15px;
     }
     .chart-card {
       background: #102a3c;
       border-radius: 12px;
-      padding: 15px;
+      padding: 12px;
       box-shadow: 0 0 8px #00ffff33;
-      height: 350px; /* 🔹 Altura aumentada */
+      height: 320px;
     }
     canvas {
       width: 100% !important;
       height: 100% !important;
+    }
+    /* Tabla y controles */
+    .controls {
+      padding: 20px;
     }
     table {
       width: 100%;
@@ -68,11 +96,33 @@
       padding: 5px;
       border-radius: 5px;
     }
+    /* Mapa */
+    #map-wrapper {
+      padding: 15px;
+    }
+    #map {
+      height: 420px;
+      border-radius: 10px;
+      border: 2px solid #00e5ff22;
+      box-shadow: 0 0 12px #00e5ff22;
+    }
+
+    footer {
+      text-align: center;
+      padding: 10px;
+      color: #00e5ff77;
+      font-size: 13px;
+      margin-top: 18px;
+    }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center; color:#00e5ff; margin:10px;">Panel de Sensores</h2>
+  <header>
+    <h1>Panel de Sensores</h1>
+    <div style="color:#9feaf2; font-size:13px; margin-top:6px;">Monitoreo en tiempo real — MQTT → Node → Mongo → Socket.IO</div>
+  </header>
 
+  <!-- Gráficas -->
   <div class="charts">
     <div class="chart-card"><canvas id="humedad"></canvas></div>
     <div class="chart-card"><canvas id="temperatura"></canvas></div>
@@ -82,10 +132,13 @@
     <div class="chart-card"><canvas id="fosforo"></canvas></div>
     <div class="chart-card"><canvas id="potasio"></canvas></div>
     <div class="chart-card"><canvas id="bateria"></canvas></div>
+    <!-- NUEVA gráfica para corriente -->
+    <div class="chart-card"><canvas id="corriente"></canvas></div>
   </div>
 
-  <div style="padding:20px;">
-    <h3>Registros</h3>
+  <!-- Controls y tabla -->
+  <div class="controls">
+    <h3 style="margin:0 0 8px 0; color:#00e5ff;">Registros</h3>
     <select id="tablaSelect">
       <option value="temperatura">Temperatura</option>
       <option value="humedad">Humedad</option>
@@ -95,6 +148,7 @@
       <option value="fosforo">Fósforo</option>
       <option value="potasio">Potasio</option>
       <option value="bateria">Batería</option>
+      <option value="corriente">Corriente</option>
     </select>
 
     <table id="dataTable">
@@ -103,191 +157,95 @@
       </thead>
       <tbody></tbody>
     </table>
-    <div id="recordInfo" style="margin-top:10px;"></div>
+
+    <div id="recordInfo" style="margin-top:10px; color:#9feaf2;"></div>
     <div id="pagination"></div>
   </div>
 
+  <!-- Mapa GPS -->
+  <div id="map-wrapper">
+    <h3 style="margin-left:15px; color:#00e5ff;">Ubicación del módulo (GPS)</h3>
+    <div id="map"></div>
+  </div>
+
+  <footer>
+    Desarrollado por Dan ⚡ — Muestra GPS y Corriente añadidos
+  </footer>
+
+  <!-- Leaflet JS (OpenStreetMap) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Tu script principal (mantén tu script.js tal como está) -->
+  <script src="script.js"></script>
+
+  <!-- Script pequeño para inicializar y actualizar el mapa (usa socket independiente) -->
   <script>
-  const SOCKET_CONNECT_ORIGIN = window.location.origin;
-  const MQTT_TIMEOUT_MS = 20000;
-  const LIVE_BUFFER_MAX = 30;
-  const TABLE_REFRESH_MS = 30000;
+    (function(){
+      // Conexión propia para el mapa (no interfiere con script.js)
+      const socketMap = io.connect(window.location.origin, { transports: ["websocket", "polling"] });
 
-  const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
-  const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria"];
-  const charts = {};
+      // Inicializar mapa
+      const map = L.map('map').setView([0,0], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
 
-  // 🎨 Colores únicos por variable
-  const colorMap = {
-    humedad: "#00bcd4",
-    temperatura: "#ff7043",
-    conductividad: "#7e57c2",
-    pH: "#81c784",
-    nitrogeno: "#ffca28",
-    fosforo: "#ec407a",
-    potasio: "#29b6f6",
-    bateria: "#8d6e63"
-  };
+      let marker = null;
+      let polyline = L.polyline([], { color: 'cyan' }).addTo(map); // opcional: trazo de ruta
 
-  function createChart(id, label) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const ctx = el.getContext("2d");
-    charts[id] = new Chart(ctx, {
-      type: "line",
-      data: { labels: [], datasets: [{
-        label,
-        data: [],
-        borderColor: colorMap[id] || "#00ffff",
-        backgroundColor: colorMap[id] + "33", // color con transparencia
-        fill: true,
-        borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 6,
-        tension: 0.3
-      }] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, labels: { color: "#fff" } },
-          tooltip: { enabled: true, mode: "nearest", intersect: false }
-        },
-        interaction: { mode: "nearest", intersect: false },
-        scales: {
-          x: { ticks: { color: "#ccc" }, grid: { color: "#1e3a4c" } },
-          y: { ticks: { color: "#ccc" }, grid: { color: "#1e3a4c" } }
+      function updateMarker(lat, lng) {
+        if (!lat || !lng) return;
+        const latN = parseFloat(lat);
+        const lngN = parseFloat(lng);
+        if (isNaN(latN) || isNaN(lngN)) return;
+
+        if (!marker) {
+          marker = L.marker([latN, lngN]).addTo(map);
+        } else {
+          marker.setLatLng([latN, lngN]);
         }
+        polyline.addLatLng([latN, lngN]); // añade punto al trazo
+        map.setView([latN, lngN], 15);
       }
-    });
-  }
 
-  // 📏 Ajuste de tamaño: más grandes y claras
-  const chartCards = document.querySelectorAll(".chart-card canvas");
-  chartCards.forEach(c => c.style.height = "250px");
+      socketMap.on('connect', () => console.log('🔌 Map Socket conectado'));
+      socketMap.on('disconnect', () => console.log('🔌 Map Socket desconectado'));
 
-  variables.forEach(v => createChart(v, v.charAt(0).toUpperCase() + v.slice(1)));
-
-  let liveBuffer = [];
-  let lastMqttTimestamp = 0;
-  let allData = [];
-  let currentPage = 1;
-  const recordsPerPage = 20;
-
-  function renderChartsFromArray(dataArray){
-    const labels = dataArray.map(d => new Date(d.fecha).toLocaleTimeString());
-    variables.forEach(v => {
-      if(!charts[v]) return;
-      charts[v].data.labels = labels;
-      charts[v].data.datasets[0].data = dataArray.map(d => {
-        const lower = v.toLowerCase();
-        const keys = Object.keys(d).reduce((acc, k) => {
-          acc[k.toLowerCase()] = d[k];
-          return acc;
-        }, {});
-        return keys[lower] ?? null;
+      // escucha nuevoDato y actualiza mapa si vienen lat/long
+      socketMap.on('nuevoDato', (data) => {
+        try {
+          // acepta varias claves posibles: latitud/longitud o lat/lon
+          const lat = data.latitud ?? data.lat ?? data.latitude ?? data.latitude_deg;
+          const lon = data.longitud ?? data.lon ?? data.lng ?? data.longitude;
+          if (lat !== undefined && lon !== undefined) {
+            updateMarker(lat, lon);
+          } else if (data.lat && data.lng) {
+            updateMarker(data.lat, data.lng);
+          }
+        } catch (e) {
+          console.error('Error actualizando mapa:', e);
+        }
       });
-      charts[v].update();
-    });
-  }
 
-  socket.on("connect", () => console.log("🔌 Socket.IO conectado"));
-  socket.on("disconnect", () => console.log("🔌 Socket.IO desconectado"));
-
-  socket.on("nuevoDato", (data) => {
-    try {
-      console.log("📡 MQTT en vivo:", data);
-      const record = { ...data, fecha: data.fecha ? new Date(data.fecha) : new Date() };
-      liveBuffer.push(record);
-      if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
-      lastMqttTimestamp = Date.now();
-      renderChartsFromArray(liveBuffer);
-    } catch (e) { console.error("Error manejando nuevoDato", e); }
-  });
-
-  async function loadLatestFromMongo(){
-    try {
-      const res = await fetch("/api/data/latest");
-      if(!res.ok) throw new Error("Respuesta no ok " + res.status);
-      const data = await res.json();
-      return data.map(d => ({ ...d, fecha: new Date(d.fecha) }));
-    } catch (err) {
-      console.error("❌ Error cargando últimos de Mongo:", err);
-      return [];
-    }
-  }
-
-  async function loadAllFromMongo(){
-    try {
-      const res = await fetch("/api/data/all");
-      if(!res.ok) throw new Error("Respuesta no ok " + res.status);
-      allData = await res.json();
-      allData = allData
-        .map(d => ({ ...d, fecha: new Date(d.fecha) }))
-        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha)); // más reciente primero
-      renderTable();
-    } catch (err) {
-      console.error("❌ Error cargando todos los datos:", err);
-      allData = [];
-      renderTable();
-    }
-  }
-
-  function renderTable() {
-    const tablaSelect = document.getElementById("tablaSelect")?.value || variables[0];
-    const tableBody = document.querySelector("#dataTable tbody");
-    if(!tableBody) return;
-    const totalRecords = allData.length;
-    const totalPages = Math.max(1, Math.ceil(totalRecords / recordsPerPage));
-    if(currentPage > totalPages) currentPage = totalPages;
-
-    const start = (currentPage - 1) * recordsPerPage;
-    const end = start + recordsPerPage;
-    const dataSlice = allData.slice(start, end);
-
-    tableBody.innerHTML = dataSlice.map(d => `
-      <tr>
-        <td>${new Date(d.fecha).toLocaleString()}</td>
-        <td>${d[tablaSelect] !== undefined ? d[tablaSelect] : (d[tablaSelect.toLowerCase()] ?? "")}</td>
-      </tr>
-    `).join("");
-
-    const pagination = document.getElementById("pagination");
-    if(pagination){
-      pagination.innerHTML = "";
-      for (let i = 1; i <= totalPages; i++) {
-        const btn = document.createElement("button");
-        btn.textContent = i;
-        btn.disabled = i === currentPage;
-        btn.onclick = () => { currentPage = i; renderTable(); };
-        pagination.appendChild(btn);
-      }
-    }
-
-    const recordInfo = document.getElementById("recordInfo");
-    if(recordInfo) recordInfo.textContent = `Mostrando ${start+1}-${Math.min(end, totalRecords)} de ${totalRecords} registros`;
-  }
-
-  async function refreshDisplay(){
-    const now = Date.now();
-    const diff = now - lastMqttTimestamp;
-    if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0){
-      renderChartsFromArray(liveBuffer);
-    } else {
-      const mongoLatest = await loadLatestFromMongo();
-      if(mongoLatest.length) renderChartsFromArray(mongoLatest);
-    }
-  }
-
-  (async function init(){
-    await loadAllFromMongo();
-    const latest = await loadLatestFromMongo();
-    if(latest.length) renderChartsFromArray(latest);
-    setInterval(refreshDisplay, 5000);
-    setInterval(loadAllFromMongo, TABLE_REFRESH_MS);
-  })();
-
-  document.getElementById("tablaSelect")?.addEventListener("change", () => { currentPage = 1; renderTable(); });
-</script>
+      // Si quieres, también tomar histórico cuando te conectas (por si tienes lat/lon en histórico)
+      socketMap.on('historico', (arr) => {
+        if (!Array.isArray(arr)) return;
+        // recorrer de más antiguo a más reciente para construir la ruta
+        const ordered = arr.slice().reverse();
+        ordered.forEach(item => {
+          const lat = item.latitud ?? item.lat ?? item.latitude;
+          const lon = item.longitud ?? item.lon ?? item.longitude;
+          if (lat !== undefined && lon !== undefined) {
+            polyline.addLatLng([parseFloat(lat), parseFloat(lon)]);
+          }
+        });
+        // centrar si hay puntos
+        const latlngs = polyline.getLatLngs();
+        if (latlngs.length) {
+          map.fitBounds(polyline.getBounds(), { maxZoom: 16 });
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
