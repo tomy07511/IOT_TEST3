@@ -17,11 +17,8 @@ const app = express();
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  transports: ["websocket", "polling"]
+  cors: { origin: "*", methods: ["GET", "POST"] },
+  transports: ["websocket", "polling"],
 });
 
 app.use(cors());
@@ -38,7 +35,7 @@ mongoose.connect(mongoUri)
   .catch(err => console.error("❌ Error conectando a MongoDB:", err));
 
 // ==============================
-// 📊 Esquema del sensor
+// 📊 Esquema del sensor (completo)
 // ==============================
 const sensorSchema = new mongoose.Schema({
   humedad: Number,
@@ -49,6 +46,11 @@ const sensorSchema = new mongoose.Schema({
   fosforo: Number,
   potasio: Number,
   bateria: Number,
+  corriente: Number,
+  latitud: Number,
+  longitud: Number,
+  hora_gps: Number,
+  rssi: Number,
   fecha: { type: Date, default: Date.now },
 });
 
@@ -79,6 +81,7 @@ mqttClient.on("message", async (topic, message) => {
     const data = JSON.parse(message.toString());
     console.log("📥 Mensaje recibido:", data);
 
+    // Crear y guardar el nuevo documento con todos los campos
     const sensor = new Sensor({
       humedad: data.humedad,
       temperatura: data.temperatura,
@@ -88,12 +91,18 @@ mqttClient.on("message", async (topic, message) => {
       fosforo: data.fosforo,
       potasio: data.potasio,
       bateria: data.bateria,
+      corriente: data.corriente,
+      latitud: data.latitud,
+      longitud: data.longitud,
+      hora_gps: data.hora_gps,
+      rssi: data.rssi,
     });
 
     await sensor.save();
     console.log("💾 Guardado en MongoDB");
 
-    io.emit("nuevoDato", sensor); // Envía el registro completo
+    // Emitir en tiempo real a los clientes conectados
+    io.emit("nuevoDato", sensor);
     console.log("📡 Dato emitido en tiempo real");
   } catch (err) {
     console.error("❌ Error procesando mensaje MQTT:", err);
@@ -107,9 +116,8 @@ io.on("connection", async (socket) => {
   console.log("🖥️ Cliente conectado a Socket.IO");
 
   try {
-    // 🔹 Ahora envía los 20 registros más recientes
     const ultimos = await Sensor.find().sort({ fecha: -1 }).limit(20).lean();
-    socket.emit("historico", ultimos); // orden DESC (más reciente primero)
+    socket.emit("historico", ultimos);
   } catch (err) {
     console.error("❌ Error enviando histórico:", err);
   }
@@ -120,8 +128,6 @@ io.on("connection", async (socket) => {
 // ==============================
 // 🔹 Endpoints REST
 // ==============================
-
-// Últimos 20 registros (más recientes primero)
 app.get("/api/data/latest", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).limit(20);
@@ -131,7 +137,6 @@ app.get("/api/data/latest", async (req, res) => {
   }
 });
 
-// Todos los registros (más recientes primero)
 app.get("/api/data/all", async (req, res) => {
   try {
     const data = await Sensor.find().sort({ fecha: -1 }).lean();

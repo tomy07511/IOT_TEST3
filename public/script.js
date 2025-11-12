@@ -7,9 +7,9 @@ const TABLE_REFRESH_MS = 30000;     // actualizar tabla desde Mongo cada 30s
 // ---- VARIABLES Y CHARTS ----
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
-// añadimos "corriente" al arreglo de variables
+// Nombres exactamente iguales a los del backend / Mongo
 const variables = [
-  "humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria","corriente"
+  "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
 ];
 
 const charts = {};
@@ -19,8 +19,21 @@ function createChart(id, label){
   const ctx = el.getContext("2d");
   charts[id] = new Chart(ctx, {
     type: "line",
-    data: { labels: [], datasets: [{ label, data: [], borderColor: "#00ffff", backgroundColor: "rgba(0,255,255,0.15)", fill:true }] },
-    options: { responsive:true, plugins:{ legend:{ display:true } }, scales:{ x:{ display:true }, y:{ display:true } } }
+    data: { 
+      labels: [], 
+      datasets: [{
+        label, 
+        data: [], 
+        borderColor: "#00ffff", 
+        backgroundColor: "rgba(0,255,255,0.15)", 
+        fill:true 
+      }] 
+    },
+    options: { 
+      responsive:true, 
+      plugins:{ legend:{ display:true } }, 
+      scales:{ x:{ display:true }, y:{ display:true } } 
+    }
   });
 }
 variables.forEach(v => createChart(v, v.charAt(0).toUpperCase() + v.slice(1)));
@@ -57,12 +70,7 @@ function renderChartsFromArray(dataArray){
   variables.forEach(v => {
     if(!charts[v]) return;
     charts[v].data.labels = labels;
-    charts[v].data.datasets[0].data = dataArray.map(d => {
-      if(v === "pH"){
-        return d.pH !== undefined ? d.pH : (d.ph !== undefined ? d.ph : null);
-      }
-      return d[v] !== undefined ? d[v] : null;
-    });
+    charts[v].data.datasets[0].data = dataArray.map(d => d[v] ?? null);
     charts[v].update();
   });
 }
@@ -80,8 +88,8 @@ socket.on("nuevoDato", (data) => {
   renderChartsFromArray(liveBuffer);
 
   // 🔹 Actualizar mapa si llegan coordenadas
-  if (data.lat !== undefined && data.lon !== undefined) {
-    updateMap(data.lat, data.lon);
+  if (data.latitud !== undefined && data.longitud !== undefined) {
+    updateMap(data.latitud, data.longitud);
   }
 });
 
@@ -136,7 +144,7 @@ function renderTable() {
   tableBody.innerHTML = dataSlice.map(d => `
     <tr>
       <td>${new Date(d.fecha).toLocaleString()}</td>
-      <td>${d[tablaSelect] !== undefined ? d[tablaSelect] : (d[tablaSelect.toLowerCase()] ?? "")}</td>
+      <td>${d[tablaSelect] !== undefined ? d[tablaSelect] : ""}</td>
     </tr>
   `).join("");
 }
