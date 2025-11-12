@@ -1,145 +1,200 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Panel de Sensores</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Chart.js + Zoom plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+  <!-- Leaflet + Fullscreen plugin -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+  <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
+
+  <!-- Socket.IO (servido por tu backend) -->
   <script src="/socket.io/socket.io.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
   <style>
-    body {
-      font-family: "Segoe UI", sans-serif;
-      background: #0b1d2a;
-      color: #fff;
-      margin: 0;
-      padding: 0;
+    :root{
+      --bg:#0b1d2a;
+      --card:#102a3c;
+      --accent:#00e5ff;
+      --muted:#1e3a4c;
+      --text:#eaf6f8;
     }
-    .charts {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 15px;
-      padding: 15px;
+    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
+    header{padding:12px 18px;text-align:center;color:var(--accent);}
+    .grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap:16px;
+      padding:16px;
+      align-items:start;
     }
-    .chart-card {
-      background: #102a3c;
-      border-radius: 12px;
-      padding: 15px;
-      box-shadow: 0 0 8px #00ffff33;
-      height: 350px;
-      overflow: hidden;
+    .card {
+      background:var(--card);
+      border-radius:12px;
+      padding:12px;
+      box-shadow:0 6px 18px rgba(0,229,255,0.06);
+      min-height:120px;
+      position:relative;
+      overflow:hidden;
     }
-    #map {
-      width: 100%;
-      height: 100%;
-      border-radius: 12px;
+    .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
+    canvas{width:100% !important;height:220px !important; display:block}
+    .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .btn {
+      background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
     }
-    canvas {
-      width: 100% !important;
-      height: 100% !important;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      color: #fff;
-    }
-    th, td {
-      border-bottom: 1px solid #00bcd4;
-      padding: 8px;
-      text-align: center;
-    }
-    th {
-      background: #0097a7;
-    }
-    tr:hover {
-      background-color: #004d40;
-    }
-    #pagination {
-      text-align: center;
-      margin-top: 10px;
-    }
-    #pagination button {
-      margin: 3px;
-      background: #00bcd4;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    #pagination button:disabled {
-      background: #006064;
-      cursor: default;
-    }
-    select {
-      margin: 10px;
-      padding: 5px;
-      border-radius: 5px;
+    .btn[disabled]{opacity:.5;cursor:default}
+    /* Mapa */
+    #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
+    #map{width:100%;height:420px;border-radius:8px}
+    /* Tabla */
+    .controls{padding:0 16px 8px 16px}
+    select {padding:6px;border-radius:6px;border:1px solid var(--muted);background:transparent;color:var(--text)}
+    table{width:95%;margin:14px auto 40px;background:var(--card);border-collapse:collapse;color:var(--text);border-radius:8px;overflow:hidden}
+    th,td{padding:10px;text-align:center;border-bottom:1px solid var(--muted)}
+    th{background:linear-gradient(90deg,#004d55,#007f8a);color:#fff}
+    #pagination{padding:10px;text-align:center}
+    #pagination button{margin:2px;padding:6px 8px;border-radius:6px;border:none;background:var(--accent);cursor:pointer}
+    @media (max-width:420px){
+      canvas{height:180px !important}
+      #map{height:320px}
     }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center; color:#00e5ff; margin:10px;">Panel de Sensores</h2>
+  <header><h2>Panel de Sensores — IoT</h2></header>
 
-  <div class="charts">
-    <div class="chart-card"><canvas id="humedad"></canvas></div>
-    <div class="chart-card"><canvas id="temperatura"></canvas></div>
-    <div class="chart-card"><canvas id="conductividad"></canvas></div>
-    <div class="chart-card"><canvas id="pH"></canvas></div>
-    <div class="chart-card"><canvas id="nitrogeno"></canvas></div>
-    <div class="chart-card"><canvas id="fosforo"></canvas></div>
-    <div class="chart-card"><canvas id="potasio"></canvas></div>
-    <div class="chart-card"><canvas id="bateria"></canvas></div>
-    <div class="chart-card"><canvas id="corriente"></canvas></div>
+  <!-- MAP -->
+  <div id="mapWrap" class="card">
+    <h4>Ubicación GPS</h4>
+    <div id="map"></div>
   </div>
 
-  <!-- 🌍 Mapa -->
-  <div class="charts">
-    <div class="chart-card">
-      <h3 style="text-align:center; margin-top:0;">Ubicación GPS</h3>
-      <div id="map"></div>
+  <!-- GRÁFICAS -->
+  <div class="grid" id="chartsGrid">
+    <div class="card">
+      <h4>Humedad</h4>
+      <canvas id="humedad"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="humedad">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Temperatura</h4>
+      <canvas id="temperatura"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="temperatura">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Conductividad</h4>
+      <canvas id="conductividad"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="conductividad">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>pH</h4>
+      <canvas id="ph"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="ph">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Nitrógeno</h4>
+      <canvas id="nitrogeno"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="nitrogeno">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Fósforo</h4>
+      <canvas id="fosforo"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="fosforo">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Potasio</h4>
+      <canvas id="potasio"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="potasio">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Batería (ADC)</h4>
+      <canvas id="bateria"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="bateria">Reset Zoom</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Corriente (raw)</h4>
+      <canvas id="corriente"></canvas>
+      <div class="chart-actions">
+        <button class="btn" data-reset="corriente">Reset Zoom</button>
+      </div>
     </div>
   </div>
 
-  <div style="padding:20px;">
-    <h3>Registros</h3>
+  <!-- Tabla y selector -->
+  <div class="controls">
+    <label for="tablaSelect" style="color:var(--accent)">Variable para tabla:</label>
     <select id="tablaSelect">
       <option value="temperatura">Temperatura</option>
       <option value="humedad">Humedad</option>
       <option value="conductividad">Conductividad</option>
-      <option value="pH">pH</option>
+      <option value="ph">pH</option>
       <option value="nitrogeno">Nitrógeno</option>
       <option value="fosforo">Fósforo</option>
       <option value="potasio">Potasio</option>
       <option value="bateria">Batería</option>
       <option value="corriente">Corriente</option>
     </select>
-
-    <table id="dataTable">
-      <thead>
-        <tr><th>Fecha</th><th>Valor</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div id="recordInfo" style="margin-top:10px;"></div>
-    <div id="pagination"></div>
   </div>
 
+  <table id="dataTable">
+    <thead><tr><th>Fecha</th><th>Valor</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="pagination"></div>
+
+  <!-- SCRIPT: lógica (socket, charts, mapa, mongo load) -->
   <script>
+  // ---- CONFIG ----
   const SOCKET_CONNECT_ORIGIN = window.location.origin;
   const MQTT_TIMEOUT_MS = 20000;
-  const LIVE_BUFFER_MAX = 30;
+  const LIVE_BUFFER_MAX = 60;
   const TABLE_REFRESH_MS = 30000;
 
-  const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
-  const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria","corriente"];
-  const charts = {};
+  // socket
+  const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket","polling"] });
 
+  // variables (deben coincidir con Mongo/backend/ESP)
+  const variables = ["humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"];
+
+  // color map
   const colorMap = {
     humedad: "#00bcd4",
     temperatura: "#ff7043",
     conductividad: "#7e57c2",
-    pH: "#81c784",
+    ph: "#81c784",
     nitrogeno: "#ffca28",
     fosforo: "#ec407a",
     potasio: "#29b6f6",
@@ -147,177 +202,248 @@
     corriente: "#c2185b"
   };
 
+  // charts container
+  const charts = {};
+
+  // chart common options with zoom & pan
+  const commonOptions = {
+    responsive:true,
+    maintainAspectRatio:false,
+    interaction:{ mode:'nearest', intersect:false },
+    plugins:{
+      legend:{ display:true, labels:{ color:'#fff' } },
+      zoom: {
+        pan: { enabled:true, mode:'x', modifierKey:'ctrl' }, // pan con ctrl+drag
+        zoom: {
+          wheel: { enabled:true }, // zoom con rueda
+          pinch: { enabled:true },
+          mode: 'x'
+        },
+        limits: { x: {min: 'original', max:'original'}, y: {min:'original', max:'original'} }
+      }
+    },
+    scales:{
+      x:{ ticks:{ color:'#ccc' }, grid:{ color:'#1e3a4c' } },
+      y:{ ticks:{ color:'#ccc' }, grid:{ color:'#1e3a4c' } }
+    }
+  };
+
+  // create chart helper
   function createChart(id, label) {
     const el = document.getElementById(id);
-    if (!el) return;
-    const ctx = el.getContext("2d");
+    if(!el) return;
+    const ctx = el.getContext('2d');
     charts[id] = new Chart(ctx, {
-      type: "line",
-      data: { labels: [], datasets: [{
+      type:'line',
+      data:{ labels:[], datasets:[{
         label,
-        data: [],
-        borderColor: colorMap[id] || "#00ffff",
-        backgroundColor: colorMap[id] + "33",
-        fill: true,
-        borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 6,
-        tension: 0.3
+        data:[],
+        borderColor: colorMap[id] || '#00ffff',
+        backgroundColor: (colorMap[id]||'#00ffff') + '33',
+        fill:true,
+        tension:0.25,
+        pointRadius:2
       }] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, labels: { color: "#fff" } },
-          tooltip: { enabled: true, mode: "nearest", intersect: false }
-        },
-        interaction: { mode: "nearest", intersect: false },
-        scales: {
-          x: { ticks: { color: "#ccc" }, grid: { color: "#1e3a4c" } },
-          y: { ticks: { color: "#ccc" }, grid: { color: "#1e3a4c" } }
-        }
-      }
+      options: JSON.parse(JSON.stringify(commonOptions)) // clone
     });
   }
 
+  // init all charts
   variables.forEach(v => createChart(v, v.charAt(0).toUpperCase() + v.slice(1)));
 
+  // reset zoom buttons
+  document.querySelectorAll('button[data-reset]').forEach(btn=>{
+    btn.addEventListener('click', ()=> {
+      const id = btn.getAttribute('data-reset');
+      const c = charts[id];
+      if(c && c.resetZoom) c.resetZoom();
+    });
+  });
+
+  // ---- MAP ----
+  const map = L.map('map', { fullscreenControl: false }).setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  // fullscreen control (plugin)
+  L.control.fullscreen({
+    position: 'topright',
+    title: 'Pantalla completa',
+    titleCancel: 'Salir de pantalla completa'
+  }).addTo(map);
+
+  let marker = null;
+  function safeSetView(lat,lon,zoom=14){
+    if (typeof lat !== 'number' || typeof lon !== 'number' || Number.isNaN(lat) || Number.isNaN(lon)) return;
+    if (!marker) {
+      marker = L.marker([lat,lon]).addTo(map);
+    } else {
+      marker.setLatLng([lat,lon]);
+    }
+    marker.bindPopup(`📍 Lat: ${lat.toFixed(6)}<br>Lon: ${lon.toFixed(6)}`).openPopup();
+    map.setView([lat,lon], zoom);
+  }
+
+  // ---- Buffers y estado ----
   let liveBuffer = [];
   let lastMqttTimestamp = 0;
   let allData = [];
   let currentPage = 1;
   const recordsPerPage = 20;
 
-  // === 🌍 Configurar mapa ===
-  const map = L.map("map").setView([0, 0], 2);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-  const marker = L.marker([0, 0]).addTo(map);
-
-  function updateMap(lat, lon) {
-    if (!lat || !lon) return;
-    marker.setLatLng([lat, lon]);
-    map.setView([lat, lon], 15);
-  }
-
+  // render charts from an array of records
   function renderChartsFromArray(dataArray){
+    if(!Array.isArray(dataArray) || dataArray.length === 0) return;
     const labels = dataArray.map(d => new Date(d.fecha).toLocaleTimeString());
-    variables.forEach(v => {
-      if(!charts[v]) return;
-      charts[v].data.labels = labels;
-      charts[v].data.datasets[0].data = dataArray.map(d => {
-        const lower = v.toLowerCase();
-        const keys = Object.keys(d).reduce((acc, k) => {
-          acc[k.toLowerCase()] = d[k];
-          return acc;
-        }, {});
-        return keys[lower] ?? null;
+    variables.forEach(v=>{
+      const c = charts[v];
+      if(!c) return;
+      c.data.labels = labels;
+      c.data.datasets[0].data = dataArray.map(d => {
+        // normalize keys: backend may send mixed-case, so check both
+        if (d[v] !== undefined) return d[v];
+        // also try alternative names (e.g., ph vs pH)
+        const keys = Object.keys(d);
+        for (const k of keys){
+          if (k.toLowerCase() === v.toLowerCase()) return d[k];
+        }
+        return null;
       });
-      charts[v].update();
+      c.update('none');
     });
 
-    // 🔹 Actualizar mapa si vienen coordenadas
-    const ultimo = dataArray[dataArray.length - 1];
-    if (ultimo && ultimo.latitud && ultimo.longitud) {
-      updateMap(ultimo.latitud, ultimo.longitud);
+    // update map to latest coords if present
+    const last = dataArray[dataArray.length -1];
+    if (last && last.latitud !== undefined && last.longitud !== undefined) {
+      const lat = Number(last.latitud);
+      const lon = Number(last.longitud);
+      safeSetView(lat, lon);
     }
   }
 
-  socket.on("nuevoDato", (data) => {
+  // ---- SOCKET.IO handlers ----
+  socket.on('connect', ()=> console.log('Socket conectado'));
+  socket.on('disconnect', ()=> console.log('Socket desconectado'));
+
+  socket.on('nuevoDato', (data)=>{
     try {
-      console.log("📡 MQTT en vivo:", data);
-      const record = { ...data, fecha: data.fecha ? new Date(data.fecha) : new Date() };
-      liveBuffer.push(record);
-      if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
+      // ensure fecha exists
+      const rec = { ...data, fecha: data.fecha ? new Date(data.fecha) : new Date() };
+      liveBuffer.push(rec);
+      if (liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
       lastMqttTimestamp = Date.now();
       renderChartsFromArray(liveBuffer);
-    } catch (e) { console.error("Error manejando nuevoDato", e); }
+    } catch (e) {
+      console.error('Error procesando nuevoDato', e);
+    }
   });
 
+  // initial historic from socket (server emits 'historico' on connect)
+  socket.on('historico', (arr)=>{
+    try {
+      // server sends array of docs
+      const normalized = (arr || []).map(d => ({ ...d, fecha: d.fecha ? new Date(d.fecha) : new Date() }));
+      liveBuffer = normalized.slice(-LIVE_BUFFER_MAX);
+      renderChartsFromArray(liveBuffer);
+      allData = normalized;
+      renderTable();
+    } catch(e){ console.error(e) }
+  });
+
+  // ---- MONGO fetch functions ----
   async function loadLatestFromMongo(){
     try {
-      const res = await fetch("/api/data/latest");
-      if(!res.ok) throw new Error("Respuesta no ok " + res.status);
-      const data = await res.json();
-      return data.map(d => ({ ...d, fecha: new Date(d.fecha) }));
+      const res = await fetch('/api/data/latest');
+      if(!res.ok) throw new Error('Status ' + res.status);
+      const json = await res.json();
+      return json.map(d => ({ ...d, fecha: d.fecha ? new Date(d.fecha) : new Date() }));
     } catch (err) {
-      console.error("❌ Error cargando últimos de Mongo:", err);
+      console.error('Error loadLatestFromMongo', err);
       return [];
     }
   }
 
   async function loadAllFromMongo(){
     try {
-      const res = await fetch("/api/data/all");
-      if(!res.ok) throw new Error("Respuesta no ok " + res.status);
-      allData = await res.json();
-      allData = allData
-        .map(d => ({ ...d, fecha: new Date(d.fecha) }))
-        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      const res = await fetch('/api/data/all');
+      if(!res.ok) throw new Error('Status ' + res.status);
+      const json = await res.json();
+      allData = json.map(d => ({ ...d, fecha: d.fecha ? new Date(d.fecha) : new Date() }))
+                    .sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
       renderTable();
     } catch (err) {
-      console.error("❌ Error cargando todos los datos:", err);
+      console.error('Error loadAllFromMongo', err);
       allData = [];
       renderTable();
     }
   }
 
-  function renderTable() {
-    const tablaSelect = document.getElementById("tablaSelect")?.value || variables[0];
-    const tableBody = document.querySelector("#dataTable tbody");
-    if(!tableBody) return;
-    const totalRecords = allData.length;
-    const totalPages = Math.max(1, Math.ceil(totalRecords / recordsPerPage));
+  // ---- TABLE rendering & pagination ----
+  function renderTable(){
+    const sel = document.getElementById('tablaSelect');
+    const key = sel ? sel.value : 'temperatura';
+    const tbody = document.querySelector('#dataTable tbody');
+    if(!tbody) return;
+    const total = allData.length;
+    const totalPages = Math.max(1, Math.ceil(total / recordsPerPage));
     if(currentPage > totalPages) currentPage = totalPages;
-
-    const start = (currentPage - 1) * recordsPerPage;
+    const start = (currentPage -1)*recordsPerPage;
     const end = start + recordsPerPage;
-    const dataSlice = allData.slice(start, end);
+    const slice = allData.slice(start, end);
 
-    tableBody.innerHTML = dataSlice.map(d => `
-      <tr>
-        <td>${new Date(d.fecha).toLocaleString()}</td>
-        <td>${d[tablaSelect] !== undefined ? d[tablaSelect] : (d[tablaSelect.toLowerCase()] ?? "")}</td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = slice.map(d=>{
+      // try to read value robustly (case-insensitive)
+      let val = d[key];
+      if (val === undefined) {
+        for (const k of Object.keys(d)){
+          if (k.toLowerCase() === key.toLowerCase()) { val = d[k]; break; }
+        }
+      }
+      // format
+      if (typeof val === 'number') val = Number(val).toFixed(3);
+      return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val ?? ''}</td></tr>`;
+    }).join('');
 
-    const pagination = document.getElementById("pagination");
-    if(pagination){
-      pagination.innerHTML = "";
-      for (let i = 1; i <= totalPages; i++) {
-        const btn = document.createElement("button");
-        btn.textContent = i;
-        btn.disabled = i === currentPage;
-        btn.onclick = () => { currentPage = i; renderTable(); };
-        pagination.appendChild(btn);
+    // pagination buttons
+    const pag = document.getElementById('pagination');
+    if(pag){
+      pag.innerHTML = '';
+      for(let i=1;i<=totalPages;i++){
+        const b = document.createElement('button');
+        b.textContent = i;
+        b.disabled = (i===currentPage);
+        b.addEventListener('click', ()=>{ currentPage = i; renderTable(); });
+        pag.appendChild(b);
       }
     }
-
-    const recordInfo = document.getElementById("recordInfo");
-    if(recordInfo) recordInfo.textContent = `Mostrando ${start+1}-${Math.min(end, totalRecords)} de ${totalRecords} registros`;
   }
 
+  // ---- refresh logic (use liveBuffer when MQTT alive, else pull from mongo) ----
   async function refreshDisplay(){
     const now = Date.now();
-    const diff = now - lastMqttTimestamp;
-    if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0){
+    if (lastMqttTimestamp !== 0 && (now - lastMqttTimestamp) <= MQTT_TIMEOUT_MS && liveBuffer.length>0){
       renderChartsFromArray(liveBuffer);
     } else {
-      const mongoLatest = await loadLatestFromMongo();
-      if(mongoLatest.length) renderChartsFromArray(mongoLatest);
+      const latest = await loadLatestFromMongo();
+      if (latest.length) renderChartsFromArray(latest);
     }
   }
 
+  // ---- INIT ----
   (async function init(){
     await loadAllFromMongo();
     const latest = await loadLatestFromMongo();
-    if(latest.length) renderChartsFromArray(latest);
+    if (latest.length) { liveBuffer = latest.slice(-LIVE_BUFFER_MAX); renderChartsFromArray(liveBuffer); }
+    // ensure map fullscreen control is visible (plugin adds it on creation)
+    // set timers
     setInterval(refreshDisplay, 5000);
     setInterval(loadAllFromMongo, TABLE_REFRESH_MS);
   })();
 
-  document.getElementById("tablaSelect")?.addEventListener("change", () => { currentPage = 1; renderTable(); });
-</script>
+  // change table variable handler
+  document.getElementById('tablaSelect').addEventListener('change', ()=> { currentPage = 1; renderTable(); });
+
+  </script>
 </body>
 </html>
