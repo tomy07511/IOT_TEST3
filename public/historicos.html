@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Históricos - Base de Datos</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #0b1d2a;
+      color: #fff;
+      margin: 0;
+      padding: 20px;
+    }
+    h2 {
+      text-align: center;
+      color: #00e5ff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      color: #fff;
+    }
+    th, td {
+      border-bottom: 1px solid #00bcd4;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background: #0097a7;
+    }
+    tr:hover {
+      background-color: #004d40;
+    }
+    #pagination {
+      text-align: center;
+      margin-top: 10px;
+    }
+    #pagination button {
+      margin: 3px;
+      background: #00bcd4;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #pagination button:disabled {
+      background: #006064;
+      cursor: default;
+    }
+    select {
+      margin: 10px 0;
+      padding: 5px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h2>📜 Registros Históricos - Base de Datos</h2>
+
+  <select id="tablaSelect">
+    <option value="temperatura">Temperatura</option>
+    <option value="humedad">Humedad</option>
+    <option value="conductividad">Conductividad</option>
+    <option value="pH">pH</option>
+    <option value="nitrogeno">Nitrógeno</option>
+    <option value="fosforo">Fósforo</option>
+    <option value="potasio">Potasio</option>
+    <option value="bateria">Batería</option>
+    <option value="corriente">Corriente</option>
+  </select>
+
+  <table id="dataTable">
+    <thead>
+      <tr><th>Fecha</th><th>Valor</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="recordInfo" style="margin-top:10px;"></div>
+  <div id="pagination"></div>
+
+  <script>
+  const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria","corriente"];
+  let allData = [];
+  let currentPage = 1;
+  const recordsPerPage = 20;
+
+  async function loadAllFromMongo(){
+    try {
+      const res = await fetch("/api/data/all");
+      if(!res.ok) throw new Error("Respuesta no ok " + res.status);
+      allData = await res.json();
+      allData = allData
+        .map(d => ({ ...d, fecha: new Date(d.fecha) }))
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      renderTable();
+    } catch (err) {
+      console.error("❌ Error cargando todos los datos:", err);
+      allData = [];
+      renderTable();
+    }
+  }
+
+  function renderTable() {
+    const tablaSelect = document.getElementById("tablaSelect")?.value || variables[0];
+    const tableBody = document.querySelector("#dataTable tbody");
+    if(!tableBody) return;
+    const totalRecords = allData.length;
+    const totalPages = Math.max(1, Math.ceil(totalRecords / recordsPerPage));
+    if(currentPage > totalPages) currentPage = totalPages;
+
+    const start = (currentPage - 1) * recordsPerPage;
+    const end = start + recordsPerPage;
+    const dataSlice = allData.slice(start, end);
+
+    tableBody.innerHTML = dataSlice.map(d => `
+      <tr>
+        <td>${new Date(d.fecha).toLocaleString()}</td>
+        <td>${d[tablaSelect] !== undefined ? d[tablaSelect] : (d[tablaSelect.toLowerCase()] ?? "")}</td>
+      </tr>
+    `).join("");
+
+    const pagination = document.getElementById("pagination");
+    pagination.innerHTML = "";
+    for (let i = 1; i <= totalPages; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = i;
+      btn.disabled = i === currentPage;
+      btn.onclick = () => { currentPage = i; renderTable(); };
+      pagination.appendChild(btn);
+    }
+
+    const recordInfo = document.getElementById("recordInfo");
+    if(recordInfo) recordInfo.textContent = `Mostrando ${start+1}-${Math.min(end, totalRecords)} de ${totalRecords} registros`;
+  }
+
+  document.getElementById("tablaSelect")?.addEventListener("change", () => { currentPage = 1; renderTable(); });
+  loadAllFromMongo();
+  </script>
+</body>
+</html>
