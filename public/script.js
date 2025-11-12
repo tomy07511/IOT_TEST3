@@ -27,6 +27,11 @@ function createCharts() {
     if(!el) return;
     const ctx = el.getContext('2d');
 
+    // Contenedor con scroll
+    const container = el.parentElement;
+    container.style.overflowX = "auto";
+    container.style.overflowY = "hidden";
+
     charts[v] = new Chart(ctx, {
       type:'line',
       data:{labels:[],datasets:[{
@@ -71,7 +76,7 @@ function createCharts() {
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
 
-    const container = btnReset.parentElement;
+    // Botones individualizados
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
     btnLive.className='btn';
@@ -81,7 +86,9 @@ function createCharts() {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
+      charts[v].resetZoom(); // resetea zoom
       renderChart(v);
+      container.scrollLeft = container.scrollWidth; // ir al final
     };
 
     const btnHist = document.createElement('button');
@@ -93,11 +100,14 @@ function createCharts() {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
+      charts[v].resetZoom(); // resetea zoom
       renderChart(v);
+      container.scrollLeft = 0; // ir al inicio
     };
 
-    container.appendChild(btnLive);
-    container.appendChild(btnHist);
+    const actionsDiv = btnReset.parentElement;
+    actionsDiv.appendChild(btnLive);
+    actionsDiv.appendChild(btnHist);
   });
 }
 
@@ -126,6 +136,11 @@ function renderChart(v){
   }
 
   chart.update();
+
+  // Ajustar scroll horizontal según modo
+  const container = chart.canvas.parentElement;
+  if(chart.displayMode==='live') container.scrollLeft = container.scrollWidth;
+  else container.scrollLeft = 0;
 }
 
 // ---- SOCKET ----
