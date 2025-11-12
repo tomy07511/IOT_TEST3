@@ -7,7 +7,10 @@ const TABLE_REFRESH_MS = 30000;     // actualizar tabla desde Mongo cada 30s
 // ---- VARIABLES Y CHARTS ----
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
-const variables = ["humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria"];
+// añadimos "corriente" al arreglo de variables
+const variables = [
+  "humedad","temperatura","conductividad","pH","nitrogeno","fosforo","potasio","bateria","corriente"
+];
 
 const charts = {};
 function createChart(id, label){
@@ -28,6 +31,25 @@ let lastMqttTimestamp = 0;
 let allData = [];
 let currentPage = 1;
 const recordsPerPage = 20;
+
+// ---- MAPA (Leaflet / OpenStreetMap) ----
+let map, marker;
+function initMap() {
+  const mapDiv = document.getElementById("map");
+  if (!mapDiv) return;
+  map = L.map("map").setView([0, 0], 2);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+  marker = L.marker([0, 0]).addTo(map).bindPopup("Esperando datos GPS...");
+}
+
+function updateMap(lat, lon) {
+  if (!map || !marker || lat === undefined || lon === undefined) return;
+  marker.setLatLng([lat, lon]);
+  map.setView([lat, lon], 14);
+  marker.setPopupContent(`📍 Lat: ${lat.toFixed(5)}<br>Lon: ${lon.toFixed(5)}`).openPopup();
+}
 
 // ---- FUNCIONES DE GRAFICOS ----
 function renderChartsFromArray(dataArray){
@@ -56,6 +78,11 @@ socket.on("nuevoDato", (data) => {
   if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
   renderChartsFromArray(liveBuffer);
+
+  // 🔹 Actualizar mapa si llegan coordenadas
+  if (data.lat !== undefined && data.lon !== undefined) {
+    updateMap(data.lat, data.lon);
+  }
 });
 
 // Recibir histórico inicial
@@ -126,10 +153,12 @@ async function refreshDisplay(){
   }
 }
 
+// ---- INICIO ----
 (async function init(){
   await loadAllFromMongo();
   const latest = await loadLatestFromMongo();
   if(latest.length) renderChartsFromArray(latest);
+  initMap();
 
   setInterval(refreshDisplay, 5000);
   setInterval(loadAllFromMongo, TABLE_REFRESH_MS);
