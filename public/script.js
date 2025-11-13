@@ -26,6 +26,14 @@ function createCharts() {
     const el = document.getElementById(v);
     if(!el) return;
 
+    // Contenedor para scroll horizontal real
+    const wrapper = document.createElement("div");
+    wrapper.style.overflowX = "auto";
+    wrapper.style.width = "100%";
+    wrapper.style.paddingBottom = "10px";
+    el.parentElement.insertBefore(wrapper, el);
+    wrapper.appendChild(el);
+
     const ctx = el.getContext('2d');
     charts[v] = new Chart(ctx, {
       type:'line',
@@ -43,56 +51,66 @@ function createCharts() {
         maintainAspectRatio:false,
         interaction:{mode:'nearest',intersect:false},
         animation:{duration:400,easing:'linear'},
-        plugins:{legend:{labels:{color:'#fff'}}},
+        plugins:{
+          legend:{labels:{color:'#fff'}},
+          zoom:{
+            pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
+            zoom:{
+              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
+              mode:'x'
+            }
+          }
+        },
         scales:{
-          x:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}},
-          y:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}}
+          x:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}},
+          y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
         }
       }
     });
 
     charts[v].displayMode = 'live';
-    charts[v].viewStart = 0;    // índice del primer punto visible en histórico
-    charts[v].viewCount = 15;   // cantidad de puntos visibles por vez
 
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
+    // ---- Botones Datos Actuales / Histórico
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
-    btnLive.className='btn';
-    btnLive.style.marginLeft='6px';
+    btnLive.className = 'btn';
+    btnLive.style.marginLeft = '6px';
     btnLive.disabled = true;
     btnLive.onclick = () => {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
-      renderChart(v);
+      renderChart(v, true);
     };
 
     const btnHist = document.createElement('button');
     btnHist.textContent = 'Histórico';
-    btnHist.className='btn';
-    btnHist.style.marginLeft='6px';
-    btnHist.disabled=false;
-    btnHist.onclick = () => {
+    btnHist.className = 'btn';
+    btnHist.style.marginLeft = '6px';
+    btnHist.disabled = false;
+    btnHist.onclick = async () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
+      await loadAllFromMongo();
       renderChart(v);
     };
 
+    // ---- Botones mover izquierda/derecha
     const btnLeft = document.createElement('button');
-    btnLeft.textContent = '◀';
-    btnLeft.className='btn';
-    btnLeft.style.marginLeft='6px';
-    btnLeft.onclick = () => shiftChart(v, -1);
+    btnLeft.textContent = '←';
+    btnLeft.className = 'btn';
+    btnLeft.style.marginLeft = '6px';
+    btnLeft.onclick = () => moveChart(v, -5); // mover 5 puntos a la izquierda
 
     const btnRight = document.createElement('button');
-    btnRight.textContent = '▶';
-    btnRight.className='btn';
-    btnRight.style.marginLeft='6px';
-    btnRight.onclick = () => shiftChart(v, 1);
+    btnRight.textContent = '→';
+    btnRight.className = 'btn';
+    btnRight.style.marginLeft = '6px';
+    btnRight.onclick = () => moveChart(v, 5); // mover 5 puntos a la derecha
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
@@ -102,29 +120,29 @@ function createCharts() {
   });
 }
 
-// ---- FUNCION PARA MOVER LA VISTA ----
-function shiftChart(v, direction){
+// ---- MOVER HISTÓRICO ----
+function moveChart(v, step){
   const chart = charts[v];
   if(!chart || chart.displayMode!=='historical') return;
-
   const total = chart._allLabels?.length || 0;
-  if(total <= chart.viewCount) return;
+  if(total <= 15) return;
 
-  chart.viewStart += direction * chart.viewCount;
-  if(chart.viewStart < 0) chart.viewStart = 0;
-  if(chart.viewStart > total - chart.viewCount) chart.viewStart = total - chart.viewCount;
+  let start = chart._startIndex ?? (total - 15);
+  start = Math.max(0, Math.min(total - 15, start + step));
+  chart._startIndex = start;
 
-  chart.data.labels = chart._allLabels.slice(chart.viewStart, chart.viewStart + chart.viewCount);
-  chart.data.datasets[0].data = chart._allData.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+  chart.data.labels = chart._allLabels.slice(start, start + 15);
+  chart.data.datasets[0].data = chart._allData.slice(start, start + 15);
   chart.update();
 }
 
 // ---- RENDER ----
-function renderChart(v){
+function renderChart(v, autoScroll=false){
   const chart = charts[v];
   if(!chart) return;
-  const dataArray = chart.displayMode==='live' ? liveBuffer : allData;
-  if(!Array.isArray(dataArray) || !dataArray.length) return;
+
+  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
+  if(!Array.isArray(dataArray)||!dataArray.length) return;
 
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
@@ -133,12 +151,16 @@ function renderChart(v){
   chart._allData = dataset;
 
   if(chart.displayMode==='historical'){
-    chart.viewStart = labels.length > chart.viewCount ? labels.length - chart.viewCount : 0;
-    chart.data.labels = labels.slice(chart.viewStart, chart.viewStart + chart.viewCount);
-    chart.data.datasets[0].data = dataset.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+    const start = chart._startIndex ?? Math.max(0, labels.length - 15);
+    chart._startIndex = start;
+    chart.data.labels = labels.slice(start, start + 15);
+    chart.data.datasets[0].data = dataset.slice(start, start + 15);
   } else {
     chart.data.labels = labels;
     chart.data.datasets[0].data = dataset;
+    if(autoScroll){
+      chart._startIndex = Math.max(0, labels.length - 15);
+    }
   }
 
   chart.update();
@@ -154,18 +176,14 @@ socket.on("nuevoDato", (data) => {
   if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='live') renderChart(v);
-  });
+  variables.forEach(v => { if(charts[v].displayMode==='live') renderChart(v); });
 
   if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='historical') renderChart(v);
-  });
+  variables.forEach(v => { if(charts[v].displayMode==='historical') renderChart(v); });
 });
 
 // ---- MONGO ----
