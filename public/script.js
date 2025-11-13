@@ -1,7 +1,7 @@
 // -----------------------------------------------------
 // script.js (REEMPLAZA tu script actual con este)
 // Lazy-load por bloques + WebGL (scattergl) + gaps + autorange Y
-// Mantiene mapa, socket, timelines, reset zoom etc.
+// Evita auto-scroll usando IGNORE_RELAYOUT + safePlot
 // -----------------------------------------------------
 
 // ---- CONFIG ----
@@ -16,15 +16,18 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-const MAX_POINTS = 5000; // para buffers por variable
-const CHUNK_SIZE = 1000; // registros por petición al servidor (ajusta si quieres)
-const GAP_MS = 24*60*60*1000; // más de 24h => dibujar linea punteada
+const MAX_POINTS = 5000;      // buffer limit
+const CHUNK_SIZE = 1000;      // registros por petición al servidor
+const GAP_MS = 24*60*60*1000; // >24h => punteado
 
 // Buffers y estructuras
 const dataBuffers = {};   // { var: { x:[], y:[] } }
 const charts = {};        // { var: { div, layout, config } }
-let skipChunks = 0;       // para /api/data/chunk?skip=...
+let skipChunks = 0;       // para /api/data/chunk?skip=
 let loadingChunks = false;
+
+// Evitar relayout loop (evita que los renders disparen watchers)
+let IGNORE_RELAYOUT = false;
 
 // Inicializar buffers
 variables.forEach(v => dataBuffers[v] = { x: [], y: [] });
@@ -38,6 +41,32 @@ function initMap(){
     marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
   }catch(e){
     console.warn('Leaflet no cargó', e);
+  }
+}
+
+// ---- safe wrappers to avoid relayout loops ----
+async function safeNewPlot(div, traces, layout, config){
+  IGNORE_RELAYOUT = true;
+  try {
+    await Plotly.newPlot(div, traces, layout, config);
+  } catch(e){
+    console.error('safeNewPlot error', e);
+    try { await Plotly.react(div, traces, layout, config); } catch(e2){ /* ignore */ }
+  } finally {
+    // small delay, then re-enable relayout handling
+    setTimeout(()=> { IGNORE_RELAYOUT = false; }, 80);
+  }
+}
+
+async function safeReact(div, traces, layout, config){
+  IGNORE_RELAYOUT = true;
+  try {
+    await Plotly.react(div, traces, layout, config);
+  } catch(e){
+    console.error('safeReact error', e);
+    try { await Plotly.newPlot(div, traces, layout, config); } catch(e2){ /* ignore */ }
+  } finally {
+    setTimeout(()=> { IGNORE_RELAYOUT = false; }, 80);
   }
 }
 
@@ -70,12 +99,15 @@ function createCharts(){
     };
 
     // crear plot vacío (scattergl para WebGL)
-    Plotly.newPlot(container, [{ x:[], y:[], type:'scattergl', mode:'lines', line:{color:colorMap[v], width:2} }], charts[v].layout, charts[v].config);
+    const emptyTrace = [{ x:[], y:[], type:'scattergl', mode:'lines', line:{color:colorMap[v], width:2} }];
+    safeNewPlot(container, emptyTrace, charts[v].layout, charts[v].config);
 
-    // autorange Y al relayout (zoom/pan)
+    // autorange Y al relayout (zoom/pan), pero ignorar si IGNORE_RELAYOUT es true
     container.on('plotly_relayout', (ev) => {
+      if (IGNORE_RELAYOUT) return;
       // si cambia rango X forzar autorange Y
       if(ev['xaxis.range[0]'] || ev['xaxis.range'] || ev['xaxis.range[1]']){
+        // no bloqueamos; small timeout to avoid race
         setTimeout(()=> Plotly.relayout(container, {'yaxis.autorange': true}).catch(()=>{}), 40);
       }
     });
@@ -85,7 +117,10 @@ function createCharts(){
 // ---- UTIL: construir trazos con gaps => segmentación y trazo punteado ----
 function buildTracesWithGaps(xs, ys, color){
   const traces = [];
-  if(!xs || xs.length === 0) return traces;
+  if(!xs || xs.length === 0) {
+    // return a single empty trace to keep Plotly happy
+    return [{ x:[], y:[], type:'scattergl', mode:'lines', line:{color, width:2} }];
+  }
 
   let segX = [xs[0]], segY = [ys[0]];
 
@@ -95,9 +130,8 @@ function buildTracesWithGaps(xs, ys, color){
     if(currT - prevT > GAP_MS){
       // push solid segment
       traces.push({ x: segX.slice(), y: segY.slice(), type:'scattergl', mode:'lines', line:{color, width:2, dash:'solid'} });
-      // dotted connector (from prev point to next) — visual only
+      // dotted connector (visual)
       traces.push({ x: [xs[i-1], xs[i]], y: [segY[segY.length-1], ys[i]], type:'scattergl', mode:'lines', line:{color, width:2, dash:'dot'}, hoverinfo:'skip' });
-
       segX = [xs[i]]; segY = [ys[i]];
     } else {
       segX.push(xs[i]); segY.push(ys[i]);
@@ -109,7 +143,7 @@ function buildTracesWithGaps(xs, ys, color){
   return traces;
 }
 
-// ---- Push chunked data to buffers (append) and render incremental ----
+// ---- Append chunked data to buffers (append) and render incremental ----
 function appendBlockToBuffers(block){
   // block is array of docs, assumed ordered asc by fecha
   block.forEach(doc => {
@@ -119,8 +153,7 @@ function appendBlockToBuffers(block){
       if(val !== undefined && val !== null){
         dataBuffers[v].x.push(fecha);
         dataBuffers[v].y.push(val);
-
-        // limit buffers to MAX_POINTS to avoid unbounded growth in memory (you can increase)
+        // limit buffers to MAX_POINTS to avoid unbounded growth (tunable)
         if(dataBuffers[v].x.length > MAX_POINTS){
           dataBuffers[v].x.shift(); dataBuffers[v].y.shift();
         }
@@ -128,14 +161,13 @@ function appendBlockToBuffers(block){
     });
   });
 
-  // after appending whole block, re-render each chart (react)
-  variables.forEach(v=>{
-    const xs = dataBuffers[v].x.map(d => d); // Date objects or ISO strings ok
+  // after appending whole block, re-render each chart (safeReact)
+  variables.forEach(async v=>{
+    const xs = dataBuffers[v].x.map(d => d);
     const ys = dataBuffers[v].y.slice();
     const traces = buildTracesWithGaps(xs, ys, colorMap[v]);
-    // if no traces (no data) create empty trace to avoid errors
     const finalTraces = traces.length ? traces : [{ x:[], y:[], type:'scattergl', mode:'lines', line:{color:colorMap[v], width:2} }];
-    Plotly.react(charts[v].div, finalTraces, charts[v].layout, charts[v].config);
+    await safeReact(charts[v].div, finalTraces, charts[v].layout, charts[v].config);
   });
 }
 
@@ -145,7 +177,10 @@ async function loadChunk(skip = 0, limit = CHUNK_SIZE){
     const res = await fetch(`/api/data/chunk?skip=${skip}&limit=${limit}`);
     if(!res.ok){ console.error('Error fetching chunk', res.status); return []; }
     const data = await res.json();
-    return data;
+    // server may return array or {data: array} — normalize
+    if(Array.isArray(data)) return data;
+    if(data && Array.isArray(data.data)) return data.data;
+    return [];
   }catch(e){
     console.error('Exception loadChunk', e);
     return [];
@@ -154,16 +189,14 @@ async function loadChunk(skip = 0, limit = CHUNK_SIZE){
 
 // ---- Load all in chunks (non-blocking, breathing loop) ----
 async function loadAllInChunks(){
+  if(loadingChunks) return;
   loadingChunks = true;
   skipChunks = 0;
   while(true){
     const block = await loadChunk(skipChunks, CHUNK_SIZE);
     if(!block || block.length === 0) break;
-    // server might return a full doc array OR an object {data:...}, accept both
-    const docs = Array.isArray(block) ? block : (block.data || []);
-    if(docs.length === 0) break;
-    appendBlockToBuffers(docs);
-    skipChunks += docs.length;
+    appendBlockToBuffers(block);
+    skipChunks += block.length;
     // give browser a tick
     await new Promise(r => setTimeout(r, 10));
   }
@@ -176,8 +209,9 @@ socket.on('connect', ()=> console.log('🔌 Socket conectado'));
 socket.on('disconnect', ()=> console.log('🔌 Socket desconectado'));
 
 socket.on('historico', (data) => {
-  // server may send a small historico via socket; use it to seed if buffers empty
+  // server may send a small historical seed via socket; use it only if buffers empty
   if(!data || !Array.isArray(data)) return;
+  if(Object.values(dataBuffers).some(b => b.x.length > 0)) return; // already have data
   // data likely in desc order; sort asc
   data.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
   appendBlockToBuffers(data);
@@ -196,34 +230,32 @@ socket.on('nuevoDato', (doc) => {
       }
     }
 
-    // append only values present and update trace using extendTraces if they fall in visible date range
-    variables.forEach(v=>{
+    // append to buffers and try fast extendTraces on each chart
+    variables.forEach(async v=>{
       const val = doc[v];
       if(val === undefined || val === null) return;
+
       // append to buffer end (keeps chronological)
       dataBuffers[v].x.push(fecha);
       dataBuffers[v].y.push(val);
       if(dataBuffers[v].x.length > MAX_POINTS){ dataBuffers[v].x.shift(); dataBuffers[v].y.shift(); }
 
-      // try fast extendTraces on the plot
+      // try extendTraces on the first trace index 0 (common case)
       try{
-        Plotly.extendTraces(charts[v].div, { x:[[fecha]], y:[[val]] }, [charts[v].div.data ? charts[v].div.data.length - 1 : 0]);
+        await Plotly.extendTraces(charts[v].div, { x:[[fecha]], y:[[val]] }, [0]);
       }catch(e){
         // fallback full re-render of visible buffer
         const xs = dataBuffers[v].x.slice(-MAX_POINTS);
         const ys = dataBuffers[v].y.slice(-MAX_POINTS);
         const traces = buildTracesWithGaps(xs, ys, colorMap[v]);
-        Plotly.react(charts[v].div, traces, charts[v].layout, charts[v].config);
+        await safeReact(charts[v].div, traces, charts[v].layout, charts[v].config);
       }
     });
+
   }catch(e){
     console.error('Error processing nuevoDato', e);
   }
 });
-
-// ---- RENDER RANGE ON ZOOM (optional): if user zooms into a range beyond current buffers we can request specific range
-// For simplicity, here we keep chunk-loading historical full dataset; if you'd like we can implement range-specific server endpoint (/api/data/range) and fetch only that range on zoom.
-// For now, autorange on Y is handled in createCharts via relayout listener.
 
 // ---- INIT ----
 (async function init(){
