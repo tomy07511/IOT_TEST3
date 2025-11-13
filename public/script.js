@@ -20,6 +20,9 @@ function initMap(){
   map = L.map('map').setView([4.65,-74.1],12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
+  
+  // Agregar control de pantalla completa
+  map.addControl(new L.Control.Fullscreen());
 }
 
 // ---- CREAR GRAFICAS ----
@@ -68,13 +71,33 @@ function createCharts(){
           gridcolor:'#0f3a45',
           tickcolor:'#0f3a45'
         },
-        yaxis:{gridcolor:'#0f3a45'},
-        legend:{orientation:'h',y:-0.25}
+        yaxis:{
+          gridcolor:'#0f3a45',
+          autorange: true,  // AUTO-AJUSTE DEL EJE Y
+          fixedrange: false // Permitir zoom manual en Y también
+        },
+        legend:{orientation:'h',y:-0.25},
+        margin: {l:60, r:30, t:50, b:80}
       },
-      config:{responsive:true}
+      config:{
+        responsive:true,
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['pan2d','select2d','lasso2d'],
+        displaylogo: false
+      }
     };
 
     Plotly.newPlot(container, [charts[v].trace], charts[v].layout, charts[v].config);
+    
+    // EVENT LISTENER PARA AUTO-AJUSTE DE Y AL HACER ZOOM
+    container.on('plotly_relayout', function(eventdata) {
+      // Cuando hay cambio de zoom/rango en X, forzar auto-range en Y
+      if (eventdata['xaxis.range[0]'] || eventdata['xaxis.range'] || eventdata['autosize']) {
+        setTimeout(() => {
+          Plotly.relayout(container, {'yaxis.autorange': true});
+        }, 100);
+      }
+    });
   });
 }
 
@@ -87,6 +110,7 @@ function pushPoint(varName, fecha, value){
     buf.x.shift();
     buf.y.shift();
   }
+  
   Plotly.react(charts[varName].div,{
     x: buf.x,
     y: buf.y,
@@ -103,6 +127,12 @@ async function loadAllFromMongo(){
     const res = await fetch('/api/data/all');
     if(!res.ok) throw new Error('Error '+res.status);
     const all = await res.json();
+    
+    if (!all || !Array.isArray(all)) {
+      console.warn('⚠️ No se recibieron datos históricos');
+      return;
+    }
+    
     all.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
     all.forEach(rec=>{
@@ -128,7 +158,9 @@ async function loadAllFromMongo(){
     });
 
     console.log('✅ Históricos cargados:', all.length);
-  }catch(e){console.error('❌ Error cargando histórico',e);}
+  }catch(e){
+    console.error('❌ Error cargando histórico',e);
+  }
 }
 
 // ---- SOCKET.IO REALTIME ----
@@ -151,9 +183,27 @@ socket.on('nuevoDato', data=>{
   });
 });
 
+// Manejo de histórico inicial via Socket.IO
+socket.on('historico', (ultimos) => {
+  console.log('📊 Histórico inicial recibido:', ultimos.length);
+  ultimos.reverse().forEach(rec => {
+    const fecha = new Date(rec.fecha);
+    variables.forEach(v => {
+      if(rec[v] !== undefined && rec[v] !== null) {
+        pushPoint(v, fecha, rec[v]);
+      }
+    });
+  });
+});
+
 // ---- INICIO ----
 (async function init(){
   initMap();
   createCharts();
   await loadAllFromMongo();
 })();
+
+// ---- MANEJO DE ERRORES GLOBALES ----
+window.addEventListener('error', function(e) {
+  console.error('❌ Error global:', e.error);
+});
