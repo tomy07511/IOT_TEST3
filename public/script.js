@@ -20,6 +20,58 @@ let liveBuffer = [];
 let allData = [];
 let lastMqttTimestamp = 0;
 
+// ---- CREAR TIME LINE ----
+function createTimeline(v){
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.alignItems = 'center';
+  container.style.marginTop = '6px';
+  container.style.gap = '6px';
+
+  const labelStart = document.createElement('label');
+  labelStart.textContent = 'Desde:';
+  const inputStart = document.createElement('input');
+  inputStart.type = 'date';
+  
+  const labelEnd = document.createElement('label');
+  labelEnd.textContent = 'Hasta:';
+  const inputEnd = document.createElement('input');
+  inputEnd.type = 'date';
+
+  container.appendChild(labelStart);
+  container.appendChild(inputStart);
+  container.appendChild(labelEnd);
+  container.appendChild(inputEnd);
+
+  // Renderizar según fechas seleccionadas
+  function updateChartRange(){
+    const chart = charts[v];
+    if(!chart._allLabels) return;
+    let startDate = inputStart.value ? new Date(inputStart.value) : null;
+    let endDate = inputEnd.value ? new Date(inputEnd.value) : null;
+
+    let filteredLabels = [];
+    let filteredData = [];
+
+    for(let i=0; i<chart._allLabels.length; i++){
+      const lblDate = new Date(chart._allLabels[i]);
+      if((!startDate || lblDate >= startDate) && (!endDate || lblDate <= endDate)){
+        filteredLabels.push(chart._allLabels[i]);
+        filteredData.push(chart._allData[i]);
+      }
+    }
+
+    chart.data.labels = filteredLabels;
+    chart.data.datasets[0].data = filteredData;
+    chart.update();
+  }
+
+  inputStart.onchange = updateChartRange;
+  inputEnd.onchange = updateChartRange;
+
+  return container;
+}
+
 // ---- CREAR GRÁFICOS ----
 function createCharts() {
   variables.forEach(v => {
@@ -47,10 +99,7 @@ function createCharts() {
           legend:{labels:{color:'#fff'}},
           zoom:{
             pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{
-              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
-              mode:'x'
-            }
+            zoom:{drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},mode:'x'}
           }
         },
         scales:{
@@ -60,88 +109,37 @@ function createCharts() {
       }
     });
 
-    charts[v].slider = createSlider(v);
+    charts[v].visiblePoints = 15;
 
-    // ---- BOTON RESET ZOOM ----
+    // BOTON RESET ZOOM
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
-    // ---- FLECHAS PARA MOVER SLIDER ----
-    const btnLeft = document.createElement('button');
-    btnLeft.textContent = '◀';
-    btnLeft.className = 'btn';
-    btnLeft.style.marginLeft = '6px';
-    btnLeft.onclick = () => {
-      const chart = charts[v];
-      let val = parseInt(chart.slider.value);
-      chart.slider.value = Math.max(0, val-5);
-      chart.slider.oninput();
-    };
-
-    const btnRight = document.createElement('button');
-    btnRight.textContent = '▶';
-    btnRight.className = 'btn';
-    btnRight.style.marginLeft = '6px';
-    btnRight.onclick = () => {
-      const chart = charts[v];
-      let val = parseInt(chart.slider.value);
-      chart.slider.value = Math.min(100, val+5);
-      chart.slider.oninput();
-    };
-
-    const actionsDiv = btnReset.parentElement;
-    actionsDiv.appendChild(btnLeft);
-    actionsDiv.appendChild(btnRight);
-    actionsDiv.appendChild(charts[v].slider);
+    // CREAR TIME LINE
+    const timeline = createTimeline(v);
+    btnReset.parentElement.appendChild(timeline);
   });
 }
 
-// ---- CREAR SLIDER ----
-function createSlider(v) {
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.min = 0;
-  slider.max = 100;
-  slider.value = 100; // 100 = datos más recientes
-  slider.className = 'slider';
-  slider.style.width = '100%';
-  slider.style.marginTop = '6px';
-
-  slider.oninput = () => {
-    const chart = charts[v];
-    if(!chart._allLabels) return;
-
-    const total = chart._allLabels.length;
-    const windowSize = Math.min(15, total);
-
-    // Calcular el índice de fin según el valor del slider
-    const endIndex = Math.floor((slider.value / 100) * (total - windowSize)) + windowSize;
-    const startIndex = Math.max(0, endIndex - windowSize);
-
-    chart.data.labels = chart._allLabels.slice(startIndex, endIndex);
-    chart.data.datasets[0].data = chart._allData.slice(startIndex, endIndex);
-    chart.update();
-  };
-
-  return slider;
-}
-
-// ---- FUNCIONES DE GRÁFICOS ----
+// ---- FUNCION RENDER (actualización automática y timeline) ----
 function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
-  let dataArray = allData.concat(liveBuffer); // todos los datos
+  let dataArray = allData.concat(liveBuffer);
   if(!dataArray.length) return;
 
-  // Ordenar por fecha (más antiguos a la izquierda)
+  // ordenar por fecha ascendente
   dataArray.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
   chart._allLabels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   chart._allData = dataArray.map(d => d[v] ?? null);
 
-  // Por defecto mostrar los últimos 15
-  chart.slider.value = 100;
-  chart.slider.oninput();
+  // Mostrar últimos 15 por defecto
+  const total = chart._allLabels.length;
+  const start = Math.max(0, total - chart.visiblePoints);
+  chart.data.labels = chart._allLabels.slice(start);
+  chart.data.datasets[0].data = chart._allData.slice(start);
+  chart.update();
 }
 
 // ---- SOCKET ----
@@ -154,14 +152,18 @@ socket.on("nuevoDato", (data) => {
   if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v => renderChart(v));
+  variables.forEach(v=>{
+    renderChart(v); // actualizar siempre los últimos 15
+  });
 
   if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => renderChart(v));
+  variables.forEach(v=>{
+    renderChart(v);
+  });
 });
 
 // ---- MONGO ----
@@ -203,13 +205,15 @@ async function refreshDisplay(){
   const now = Date.now();
   const diff = now-lastMqttTimestamp;
 
-  if(diff <= MQTT_TIMEOUT_MS && liveBuffer.length>0){
-    variables.forEach(v => renderChart(v));
-  } else {
-    const mongoLatest = await loadLatestFromMongo();
-    if(mongoLatest.length>0){
-      allData = mongoLatest;
-      variables.forEach(v => renderChart(v));
+  for(const v of variables){
+    if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS){
+      renderChart(v);
+    } else {
+      const mongoLatest = await loadLatestFromMongo();
+      if(mongoLatest.length > 0){
+        allData = mongoLatest;
+        renderChart(v);
+      }
     }
   }
 }
@@ -220,7 +224,7 @@ async function refreshDisplay(){
   createCharts();
   await loadAllFromMongo();
   const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v => renderChart(v));
+  if(latest.length) variables.forEach(v=> renderChart(v));
 
   setInterval(refreshDisplay,5000);
   setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
