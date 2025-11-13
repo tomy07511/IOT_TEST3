@@ -4,6 +4,9 @@ let allData = [];
 let liveBuffer = [];
 let lastMqttTimestamp = 0;
 
+// Colores llamativos para cada gráfica
+const colors = ['#ff6384','#36a2eb','#ffcd56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#00ff99','#ff00ff'];
+
 // ================= MAPA =================
 let map, marker;
 function initMap() {
@@ -18,79 +21,137 @@ function updateMap(lat, lon) {
   marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
 }
 
+// ================= TIMELINE =================
+function createTimeline(v){
+  const container = document.createElement('div');
+  container.style.display='flex';
+  container.style.alignItems='center';
+  container.style.marginTop='4px';
+  container.style.gap='6px';
+  container.style.background='#222';
+  container.style.padding='4px';
+  container.style.borderRadius='4px';
+
+  const labelStart = document.createElement('label'); labelStart.textContent='Desde:'; 
+  const inputStart = document.createElement('input'); inputStart.type='date';
+  const labelEnd = document.createElement('label'); labelEnd.textContent='Hasta:'; 
+  const inputEnd = document.createElement('input'); inputEnd.type='date';
+
+  container.append(labelStart,inputStart,labelEnd,inputEnd);
+
+  function updateChartRange(){
+    const chart = charts[v];
+    if(!chart._allLabels) return;
+
+    let startDate = inputStart.value ? new Date(inputStart.value) : null;
+    let endDate = inputEnd.value ? new Date(inputEnd.value) : null;
+
+    let filteredLabels=[], filteredData=[];
+    for(let i=0;i<chart._allLabels.length;i++){
+      const lblDate = new Date(chart._allLabels[i]);
+      if((!startDate || lblDate>=startDate)&&(!endDate || lblDate<=endDate)){
+        filteredLabels.push(chart._allLabels[i]);
+        filteredData.push(chart._allData[i]);
+      }
+    }
+
+    chart.setOption({ series:[{data:filteredData}] });
+    chart.setOption({ xAxis:[{data:filteredLabels}] });
+  }
+
+  inputStart.onchange = updateChartRange;
+  inputEnd.onchange = updateChartRange;
+
+  return container;
+}
+
 // ================= ECHARTS =================
 function createCharts() {
   const container = document.getElementById('chartsContainer');
-  variables.forEach(v => {
+  variables.forEach((v,i)=>{
     const chartDiv = document.createElement('div');
-    chartDiv.className = 'chartBox';
-    chartDiv.id = 'chart_'+v;
+    chartDiv.className='chartBox';
+    chartDiv.id='chart_'+v;
     container.appendChild(chartDiv);
 
     const chart = echarts.init(chartDiv);
     const option = {
       useUTC:true,
-      title: { text:v.toUpperCase(), left:'center', textStyle:{color:'#fff'} },
-      tooltip: { trigger:'axis' },
-      xAxis: { type:'time', axisLabel:{color:'#fff'} },
-      yAxis: { type:'value', min:'dataMin', axisLabel:{color:'#fff'} },
-      dataZoom:[{type:'inside'},{type:'slider', top:'85%'}],
-      series:[{ type:'line', symbolSize:0, areaStyle:{}, data: [] }]
+      title:{ text:v.toUpperCase(), left:'center', textStyle:{color:'#fff'} },
+      tooltip:{ trigger:'axis' },
+      xAxis:{ type:'time', axisLabel:{color:'#fff'} },
+      yAxis:{ type:'value', min:'dataMin', axisLabel:{color:'#fff'} },
+      series:[{
+        type:'line',
+        symbolSize:0,
+        areaStyle:{color:colors[i]},
+        lineStyle:{color:colors[i]},
+        data:[]
+      }],
+      grid:{bottom:60}
     };
     chart.setOption(option);
-    charts[v] = chart;
+    charts[v]=chart;
+
+    // Timeline debajo de la gráfica
+    const timeline = createTimeline(v);
+    container.appendChild(timeline);
   });
 }
 
 // ================= RENDER DATOS =================
-function renderChart(v) {
+function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
-  const dataArray = allData.concat(liveBuffer);
+
+  const dataArray = allData.concat(liveBuffer); // históricos + live
   if(!dataArray.length) return;
 
-  dataArray.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+  dataArray.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+  chart._allLabels = dataArray.map(d=>new Date(d.fecha).toLocaleString());
+  chart._allData = dataArray.map(d=>d[v]??null);
 
-  const seriesData = dataArray.map(d => [new Date(d.fecha).getTime(), d[v] ?? null]);
-  chart.setOption({ series:[{ data: seriesData }] });
+  chart.setOption({
+    xAxis:[{type:'time', data:chart._allLabels}],
+    series:[{data:chart._allData}]
+  });
 }
 
 // ================= SOCKET.IO =================
 const socket = io();
-socket.on("connect",()=>console.log("🔌 Socket conectado"));
-socket.on("disconnect",()=>console.log("🔌 Socket desconectado"));
-
-socket.on("historico", (data) => {
-  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => renderChart(v));
+socket.on("historico", data=>{
+  allData = data.map(d=>({...d, fecha:new Date(d.fecha)}));
+  variables.forEach(v=>renderChart(v));
 });
-
-socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: new Date(data.fecha)};
+socket.on("nuevoDato", data=>{
+  const record={...data, fecha:new Date(data.fecha)};
   liveBuffer.push(record);
   if(liveBuffer.length>30) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
-  variables.forEach(v => renderChart(v));
-  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud, data.longitud);
+  variables.forEach(v=>renderChart(v));
+  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
 });
 
 // ================= INIT =================
-function init() {
+function init(){
   initMap();
   createCharts();
 
-  // Cargar datos históricos desde tu API
-  fetch('/api/data/all').then(r=>r.json()).then(d=>{
-    allData = d.map(d => ({...d, fecha:new Date(d.fecha)}));
-    variables.forEach(v => renderChart(v));
-  });
-
-  // Actualizar cada 30 seg
-  setInterval(()=>{
-    fetch('/api/data/latest').then(r=>r.json()).then(latest=>{
-      allData = latest.map(d => ({...d, fecha:new Date(d.fecha)}));
-      variables.forEach(v => renderChart(v));
+  fetch('/api/data/all')
+    .then(r=>r.json())
+    .then(d=>{
+      allData = d.map(d=>({...d, fecha:new Date(d.fecha)}));
+      variables.forEach(v=>renderChart(v));
     });
-  }, 30000);
+
+  setInterval(()=>{
+    fetch('/api/data/latest')
+      .then(r=>r.json())
+      .then(latest=>{
+        allData = latest.map(d=>({...d, fecha:new Date(d.fecha)}));
+        variables.forEach(v=>renderChart(v));
+      });
+  },30000);
 }
+
 init();
