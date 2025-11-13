@@ -1,6 +1,8 @@
 // ---- CONFIG ----
 const SOCKET_CONNECT_ORIGIN = window.location.origin;
 const MQTT_TIMEOUT_MS = 20000;
+const LIVE_BUFFER_MAX = 30;
+const TABLE_REFRESH_MS = 30000;
 
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
@@ -66,7 +68,6 @@ function createCharts() {
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
-    // --- BOTONES ---
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
     btnLive.className = 'btn';
@@ -76,6 +77,7 @@ function createCharts() {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
+      charts[v].resetZoom();
       renderChart(v, true);
     };
 
@@ -88,79 +90,39 @@ function createCharts() {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
-      renderChart(v);
+      charts[v].resetZoom();
+      renderChart(v); // 👈 ahora muestra todo el histórico
     };
-
-    const btnLeft = document.createElement('button');
-    btnLeft.textContent = '<<';
-    btnLeft.className = 'btn';
-    btnLeft.style.marginLeft = '6px';
-    btnLeft.onclick = () => shiftHistorical(v, -10);
-
-    const btnRight = document.createElement('button');
-    btnRight.textContent = '>>';
-    btnRight.className = 'btn';
-    btnRight.style.marginLeft = '6px';
-    btnRight.onclick = () => shiftHistorical(v, 10);
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
     actionsDiv.appendChild(btnHist);
-    actionsDiv.appendChild(btnLeft);
-    actionsDiv.appendChild(btnRight);
   });
 }
 
-// ---- HISTÓRICO CON FLECHAS ----
-function shiftHistorical(v, step){
-  const chart = charts[v];
-  if(!chart || chart.displayMode !== 'historical') return;
-
-  const total = chart._allLabels.length;
-  if(total===0) return;
-
-  // rango visible igual al total si no hay límite
-  const range = Math.min(50, total); // puedes ajustar el tamaño de ventana visible
-  let start = chart._histStart ?? (total - range);
-  start += step;
-  start = Math.max(0, Math.min(start, total - range));
-  chart._histStart = start;
-
-  chart.data.labels = chart._allLabels.slice(start, start + range);
-  chart.data.datasets[0].data = chart._allData.slice(start, start + range);
-  chart.update();
-}
-
-// ---- RENDER ----
+// ---- FUNCIONES DE GRÁFICOS ----
 function renderChart(v, autoScroll=false){
   const chart = charts[v];
   if(!chart) return;
-
-  const dataArray = chart.displayMode==='live' ? liveBuffer : allData;
+  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
   if(!Array.isArray(dataArray)||!dataArray.length) return;
 
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
 
-  chart._allLabels = labels;
-  chart._allData = dataset;
-
-  if(chart.displayMode==='historical'){
-    const total = labels.length;
-    const range = Math.min(50, total);
-    chart._histStart = total - range;
-
-    chart.data.labels = labels.slice(chart._histStart, chart._histStart + range);
-    chart.data.datasets[0].data = dataset.slice(chart._histStart, chart._histStart + range);
-  } else {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = dataset;
-  }
+  // Asignamos todos los datos sin recorte
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = dataset;
 
   chart.update();
 
-  if(autoScroll && chart.displayMode==='live'){
-    chart.resetZoom();
+  // Si viene de "Datos actuales", centramos la vista en los últimos
+  if(autoScroll){
+    const len = chart.data.labels.length;
+    if(len > 0){
+      const wrapper = chart.canvas.parentElement;
+      wrapper.scrollLeft = wrapper.scrollWidth;
+    }
   }
 }
 
@@ -169,23 +131,21 @@ socket.on("connect", () => console.log("🔌 Socket conectado"));
 socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
 
 socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha:data.fecha ? new Date(data.fecha) : new Date()};
+  const record = {...data, fecha: data.fecha ? new Date(data.fecha) : new Date()};
   liveBuffer.push(record);
-  if(liveBuffer.length > 1000) liveBuffer.shift(); // buffer live más grande
+  if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v => {
+  variables.forEach(v=>{
     if(charts[v].displayMode==='live') renderChart(v);
   });
 
-  if(data.latitud!==undefined && data.longitud!==undefined){
-    updateMap(data.latitud,data.longitud);
-  }
+  if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => {
+  variables.forEach(v=>{
     if(charts[v].displayMode==='historical') renderChart(v);
   });
 });
@@ -197,7 +157,7 @@ async function loadLatestFromMongo(){
     if(!res.ok) throw new Error('Error '+res.status);
     const data = await res.json();
     return data.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);return [];}
+  }catch(e){console.error(e); return [];}
 }
 
 async function loadAllFromMongo(){
@@ -231,11 +191,11 @@ async function refreshDisplay(){
 
   for(const v of variables){
     if(charts[v].displayMode==='live'){
-      if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
+      if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS && liveBuffer.length > 0){
         renderChart(v);
       } else {
         const mongoLatest = await loadLatestFromMongo();
-        if(mongoLatest.length>0){
+        if(mongoLatest.length > 0){
           allData = mongoLatest;
           renderChart(v);
         }
@@ -253,5 +213,5 @@ async function refreshDisplay(){
   if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
 
   setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,30000);
+  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
 })();
