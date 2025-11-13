@@ -14,10 +14,6 @@ const dataBuffers = {};
 const charts = {};
 variables.forEach(v=>dataBuffers[v] = {x:[],y:[]});
 
-// Variables para controlar el auto-ajuste
-let isZoomActive = false;
-let currentXRange = null;
-
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
@@ -91,72 +87,44 @@ function createCharts(){
 
     Plotly.newPlot(container, [charts[v].trace], charts[v].layout, charts[v].config);
     
-    // EVENT LISTENER MEJORADO PARA ZOOM
+    // EVENT LISTENER SIMPLIFICADO
     container.on('plotly_relayout', function(eventdata) {
-      console.log('🔍 Evento relayout:', eventdata);
-      
-      // Detectar cuando se hace zoom (rango específico)
+      // Si hay rango específico = zoom activo, ajustar Y
       if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
-        isZoomActive = true;
-        currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
-        console.log('🔍 Zoom activado:', currentXRange);
-        
-        // Auto-ajustar eje Y para los datos visibles
-        autoAdjustYAxis(v, currentXRange);
+        const xRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
+        autoAdjustYAxis(v, xRange);
       }
-      // Detectar cuando se hace clic en botones del rangeselector
-      else if (eventdata['xaxis.range'] && eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
-        isZoomActive = true;
-        currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
-        console.log('🔍 Range selector activado:', currentXRange);
-        autoAdjustYAxis(v, currentXRange);
-      }
-      // Detectar cuando se vuelve al rango completo (botón "Todo" o doble clic)
-      else if (eventdata['xaxis.autorange'] === true || 
-               eventdata['xaxis.range[0]'] === undefined ||
-               Object.keys(eventdata).length === 0) {
-        isZoomActive = false;
-        currentXRange = null;
-        console.log('🔍 Zoom desactivado - Volviendo a autorange');
-        
-        // Reactivar autorange completo
-        Plotly.relayout(container, {
-          'yaxis.autorange': true,
-          'yaxis.range': null
-        });
-      }
-      // Detectar autosize (redimensionamiento)
-      else if (eventdata['autosize']) {
-        console.log('🔍 Autosize detectado');
+      // Si no hay rango = zoom quitado, volver a autorange
+      else {
         Plotly.relayout(container, {'yaxis.autorange': true});
       }
     });
   });
 }
 
-// ---- FUNCIÓN PARA AUTO-AJUSTAR EJE Y ----
+// ---- FUNCIÓN OPTIMIZADA PARA AUTO-AJUSTAR EJE Y ----
 function autoAdjustYAxis(varName, xRange) {
   const buf = dataBuffers[varName];
   const startTime = new Date(xRange[0]).getTime();
   const endTime = new Date(xRange[1]).getTime();
   
-  // Filtrar datos dentro del rango de zoom
-  const visibleData = [];
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let foundData = false;
+  
+  // Búsqueda optimizada sin crear arrays intermedios
   for (let i = 0; i < buf.x.length; i++) {
     const time = new Date(buf.x[i]).getTime();
     if (time >= startTime && time <= endTime) {
-      visibleData.push(buf.y[i]);
+      const value = buf.y[i];
+      if (value < minY) minY = value;
+      if (value > maxY) maxY = value;
+      foundData = true;
     }
   }
   
-  if (visibleData.length > 0) {
-    const minY = Math.min(...visibleData);
-    const maxY = Math.max(...visibleData);
-    const padding = (maxY - minY) * 0.1; // 10% de padding
-    
-    console.log(`📊 Ajustando Y para ${varName}: ${minY.toFixed(2)} - ${maxY.toFixed(2)}`);
-    
-    // Aplicar nuevo rango al eje Y
+  if (foundData) {
+    const padding = (maxY - minY) * 0.1;
     Plotly.relayout(charts[varName].div, {
       'yaxis.range': [minY - padding, maxY + padding],
       'yaxis.autorange': false
@@ -170,13 +138,11 @@ function pushPoint(varName, fecha, value){
   buf.x.push(fecha);
   buf.y.push(value);
   
-  // Mantener límite de puntos
   if(buf.x.length > MAX_POINTS){
     buf.x.shift();
     buf.y.shift();
   }
   
-  // Actualizar gráfica
   Plotly.react(charts[varName].div, [{
     x: buf.x,
     y: buf.y,
@@ -185,12 +151,7 @@ function pushPoint(varName, fecha, value){
     line: {color: colorMap[varName], width: 2},
     name: varName,
     connectgaps: false
-  }], charts[varName].layout, charts[v].config);
-  
-  // Si hay zoom activo, re-ajustar el eje Y
-  if (isZoomActive && currentXRange) {
-    autoAdjustYAxis(varName, currentXRange);
-  }
+  }], charts[varName].layout, charts[varName].config);
 }
 
 // ---- CARGAR HISTORICO ----
@@ -205,16 +166,13 @@ async function loadAllFromMongo(){
       return;
     }
     
-    // Ordenar por fecha
     all.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
-    // Limpiar buffers antes de cargar
     variables.forEach(v => {
       dataBuffers[v].x = [];
       dataBuffers[v].y = [];
     });
 
-    // Cargar datos
     all.forEach(rec=>{
       const fecha = new Date(rec.fecha);
       variables.forEach(v=>{
@@ -225,7 +183,6 @@ async function loadAllFromMongo(){
       });
     });
 
-    // Render inicial
     variables.forEach(v=>{
       Plotly.react(charts[v].div, [{
         x: dataBuffers[v].x,
@@ -251,14 +208,12 @@ socket.on('disconnect', ()=>console.log('🔌 Socket desconectado'));
 socket.on('nuevoDato', data=>{
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
 
-  // Actualizar mapa
   if(data.latitud!==undefined && data.longitud!==undefined){
     marker.setLatLng([data.latitud,data.longitud]);
     map.setView([data.latitud,data.longitud],14);
     marker.setPopupContent(`📍 Lat:${data.latitud.toFixed(5)}<br>Lon:${data.longitud.toFixed(5)}`).openPopup();
   }
 
-  // Actualizar gráficas
   variables.forEach(v=>{
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
