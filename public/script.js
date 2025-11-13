@@ -1,25 +1,3 @@
-// ---- CONFIG ----
-const SOCKET_CONNECT_ORIGIN = window.location.origin;
-const MQTT_TIMEOUT_MS = 20000;
-const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
-
-const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
-
-const variables = [
-  "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
-];
-
-const colorMap = {
-  humedad:"#00bcd4", temperatura:"#ff7043", conductividad:"#7e57c2", ph:"#81c784",
-  nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
-};
-
-const charts = {};
-let liveBuffer = [];
-let allData = [];
-let lastMqttTimestamp = 0;
-
 // ---- CREAR GRÁFICOS ----
 function createCharts() {
   variables.forEach(v => {
@@ -28,11 +6,11 @@ function createCharts() {
 
     // contenedor con scroll horizontal permanente
     const wrapper = document.createElement("div");
-    wrapper.style.overflowX = "auto";
+    wrapper.style.overflowX = "auto";         // siempre scroll horizontal
     wrapper.style.width = "100%";
     wrapper.style.paddingBottom = "10px";
     wrapper.style.scrollBehavior = "smooth";
-    wrapper.style.whiteSpace = "nowrap"; // importante para scroll continuo
+    wrapper.style.whiteSpace = "nowrap";      // importante para scroll continuo
     el.parentElement.insertBefore(wrapper, el);
     wrapper.appendChild(el);
 
@@ -53,10 +31,7 @@ function createCharts() {
         responsive:true,
         maintainAspectRatio:false,
         interaction:{mode:'nearest',intersect:false},
-        animation:{
-          duration:600,
-          easing:"easeOutQuart"
-        },
+        animation:{duration:600,easing:"easeOutQuart"},
         plugins:{
           legend:{labels:{color:'#fff'}},
           zoom:{
@@ -66,7 +41,8 @@ function createCharts() {
               mode:'x',
               onZoomComplete({chart}) {
                 const wrapper = chart.canvas.parentElement;
-                wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth) / 2;
+                // mantiene scroll visible
+                wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth)/2;
               }
             }
           }
@@ -78,6 +54,7 @@ function createCharts() {
               callback:function(val,index){
                 const total = this.chart.data.labels.length;
                 const visibleCount = this.chart.scales.x.ticks.length;
+                // mostrar fecha si <=15 puntos visibles
                 if (visibleCount <= 15) return this.chart.data.labels[index];
                 return '';
               }
@@ -93,7 +70,7 @@ function createCharts() {
 
     // --- Botones ---
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
+    if(btnReset) btnReset.onclick = ()=>charts[v].resetZoom();
 
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
@@ -105,17 +82,14 @@ function createCharts() {
       btnLive.disabled = true;
       btnHist.disabled = false;
       charts[v].resetZoom();
-      renderChart(v, true);
-      // lleva el scroll al final (últimos puntos)
-      const wrapper = charts[v].chart.canvas.parentElement;
-      wrapper.scrollLeft = wrapper.scrollWidth;
+      renderChart(v, true); // centramos al final
     };
 
     const btnHist = document.createElement('button');
     btnHist.textContent = 'Histórico';
     btnHist.className='btn';
     btnHist.style.marginLeft='6px';
-    btnHist.disabled=false;
+    btnHist.disabled = false;
     btnHist.onclick = async () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
@@ -124,7 +98,7 @@ function createCharts() {
       await loadAllFromMongo();
       renderChart(v);
       const wrapper = charts[v].chart.canvas.parentElement;
-      wrapper.scrollLeft = 0;
+      wrapper.scrollLeft = 0; // inicio histórico
     };
 
     const actionsDiv = btnReset.parentElement;
@@ -150,96 +124,6 @@ function renderChart(v, autoScroll=false){
 
   if(autoScroll){
     const wrapper = chart.chart.canvas.parentElement;
-    wrapper.scrollLeft = wrapper.scrollWidth;
+    wrapper.scrollLeft = wrapper.scrollWidth; // siempre al final
   }
 }
-
-// ---- SOCKET ----
-socket.on("connect", () => console.log("🔌 Socket conectado"));
-socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
-
-socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha? new Date(data.fecha): new Date()};
-  liveBuffer.push(record);
-  if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
-  lastMqttTimestamp = Date.now();
-
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='live') renderChart(v);
-  });
-
-  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
-});
-
-socket.on("historico", (data) => {
-  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='historical') renderChart(v);
-  });
-});
-
-// ---- MONGO ----
-async function loadLatestFromMongo(){
-  try{
-    const res = await fetch('/api/data/latest');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const data = await res.json();
-    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);return [];}
-}
-
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    allData = await res.json();
-    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);}
-}
-
-// ---- MAPA ----
-let map, marker;
-function initMap(){
-  map = L.map('map').setView([0,0],2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
-}
-
-function updateMap(lat,lon){
-  if(!map||!marker||lat===undefined||lon===undefined) return;
-  marker.setLatLng([lat,lon]);
-  map.setView([lat,lon],14);
-  marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
-}
-
-// ---- CICLOS ----
-async function refreshDisplay(){
-  const now = Date.now();
-  const diff = now-lastMqttTimestamp;
-
-  for(const v of variables){
-    if(charts[v].displayMode==='live'){
-      if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-        renderChart(v);
-      } else {
-        const mongoLatest = await loadLatestFromMongo();
-        if(mongoLatest.length>0){
-          allData = mongoLatest;
-          renderChart(v);
-        }
-      }
-    }
-  }
-}
-
-// ---- INICIO ----
-(async function init(){
-  initMap();
-  createCharts();
-  await loadAllFromMongo();
-  const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
-
-  setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
-})();
