@@ -23,7 +23,7 @@ function initMap(){
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES DE ZOOM CON SLIDERS ----
+// ---- CONTROLES DE ZOOM MEJORADOS ----
 function createZoomControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
@@ -38,7 +38,6 @@ function createZoomControls(varName, container) {
     flex-wrap: wrap;
   `;
   
-  // Título
   const title = document.createElement('span');
   title.textContent = varName;
   title.style.cssText = `
@@ -50,12 +49,7 @@ function createZoomControls(varName, container) {
   
   // Controles de Zoom X
   const zoomXDiv = document.createElement('div');
-  zoomXDiv.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 200px;
-  `;
+  zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   
   const zoomXLabel = document.createElement('span');
   zoomXLabel.textContent = 'Zoom X:';
@@ -63,8 +57,8 @@ function createZoomControls(varName, container) {
   
   const zoomXSlider = document.createElement('input');
   zoomXSlider.type = 'range';
-  zoomXSlider.min = '1';
-  zoomXSlider.max = '100';
+  zoomXSlider.min = '10';
+  zoomXSlider.max = '200';
   zoomXSlider.value = '100';
   zoomXSlider.style.cssText = `
     flex: 1;
@@ -80,12 +74,7 @@ function createZoomControls(varName, container) {
   
   // Controles de Zoom Y
   const zoomYDiv = document.createElement('div');
-  zoomYDiv.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 200px;
-  `;
+  zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   
   const zoomYLabel = document.createElement('span');
   zoomYLabel.textContent = 'Zoom Y:';
@@ -93,8 +82,8 @@ function createZoomControls(varName, container) {
   
   const zoomYSlider = document.createElement('input');
   zoomYSlider.type = 'range';
-  zoomYSlider.min = '1';
-  zoomYSlider.max = '100';
+  zoomYSlider.min = '10';
+  zoomYSlider.max = '200';
   zoomYSlider.value = '100';
   zoomYSlider.style.cssText = `
     flex: 1;
@@ -108,7 +97,7 @@ function createZoomControls(varName, container) {
   zoomYValue.textContent = '100%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
   
-  // Botones de acción
+  // Botones
   const buttonsDiv = document.createElement('div');
   buttonsDiv.style.cssText = `display: flex; gap: 5px;`;
   
@@ -143,20 +132,22 @@ function createZoomControls(varName, container) {
     zoomXSlider,
     zoomYSlider,
     zoomXValue,
-    zoomYValue
+    zoomYValue,
+    currentXRange: null,
+    currentYRange: null
   };
   
-  // Event listeners para sliders
+  // Event listeners para sliders - AHORA BASADO EN ZOOM ACTUAL
   zoomXSlider.addEventListener('input', (e) => {
     const value = e.target.value;
     zoomXValue.textContent = value + '%';
-    applyZoom(varName, 'x', parseInt(value));
+    applyZoomFromCurrent(varName, 'x', parseInt(value));
   });
   
   zoomYSlider.addEventListener('input', (e) => {
     const value = e.target.value;
     zoomYValue.textContent = value + '%';
-    applyZoom(varName, 'y', parseInt(value));
+    applyZoomFromCurrent(varName, 'y', parseInt(value));
   });
   
   // Event listeners para botones
@@ -183,48 +174,143 @@ function createZoomControls(varName, container) {
   container.parentNode.insertBefore(controlsDiv, container);
 }
 
-// ---- APLICAR ZOOM CON SLIDERS ----
-function applyZoom(varName, axis, zoomPercent) {
-  const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
+// ---- APLICAR ZOOM DESDE EL RANGO ACTUAL ----
+function applyZoomFromCurrent(varName, axis, zoomPercent) {
+  const control = zoomControls[varName];
   
-  // Obtener el rango completo de datos
-  const allDates = buf.x.map(x => new Date(x).getTime());
-  const allValues = buf.y;
+  // Si no tenemos rango actual, obtenerlo del gráfico
+  if (!control.currentXRange || !control.currentYRange) {
+    updateCurrentRanges(varName);
+  }
   
-  const minTime = Math.min(...allDates);
-  const maxTime = Math.max(...allDates);
-  const minValue = Math.min(...allValues);
-  const maxValue = Math.max(...allValues);
-  
-  const timeRange = maxTime - minTime;
-  const valueRange = maxValue - minValue;
-  
-  if (axis === 'x') {
-    // Zoom en X: reducir el rango temporal visible
-    const visibleTimeRange = timeRange * (zoomPercent / 100);
-    const centerTime = (minTime + maxTime) / 2;
+  if (axis === 'x' && control.currentXRange) {
+    const [currentMinX, currentMaxX] = control.currentXRange;
+    const currentRange = currentMaxX - currentMinX;
+    const newRange = currentRange * (100 / zoomPercent); // Invertir la lógica
     
-    const newMinTime = centerTime - visibleTimeRange / 2;
-    const newMaxTime = centerTime + visibleTimeRange / 2;
+    const center = (currentMinX + currentMaxX) / 2;
+    const newMinX = center - newRange / 2;
+    const newMaxX = center + newRange / 2;
     
     Plotly.relayout(charts[varName].div, {
-      'xaxis.range': [new Date(newMinTime), new Date(newMaxTime)],
+      'xaxis.range': [new Date(newMinX), new Date(newMaxX)],
       'xaxis.autorange': false
     });
     
-  } else if (axis === 'y') {
-    // Zoom en Y: reducir el rango de valores visible
-    const visibleValueRange = valueRange * (zoomPercent / 100);
-    const centerValue = (minValue + maxValue) / 2;
+  } else if (axis === 'y' && control.currentYRange) {
+    const [currentMinY, currentMaxY] = control.currentYRange;
+    const currentRange = currentMaxY - currentMinY;
+    const newRange = currentRange * (100 / zoomPercent); // Invertir la lógica
     
-    const newMinValue = centerValue - visibleValueRange / 2;
-    const newMaxValue = centerValue + visibleValueRange / 2;
+    const center = (currentMinY + currentMaxY) / 2;
+    const newMinY = center - newRange / 2;
+    const newMaxY = center + newRange / 2;
     
     Plotly.relayout(charts[varName].div, {
-      'yaxis.range': [newMinValue, newMaxValue],
+      'yaxis.range': [newMinY, newMaxY],
       'yaxis.autorange': false
     });
+  }
+}
+
+// ---- ACTUALIZAR RANGOS ACTUALES ----
+function updateCurrentRanges(varName) {
+  const control = zoomControls[varName];
+  
+  // Obtener el rango actual del gráfico
+  const graphDiv = charts[varName].div;
+  const layout = graphDiv.layout;
+  
+  if (layout.xaxis.range) {
+    const [minX, maxX] = layout.xaxis.range;
+    control.currentXRange = [new Date(minX).getTime(), new Date(maxX).getTime()];
+  } else {
+    // Si no hay zoom, usar todo el rango de datos
+    const buf = dataBuffers[varName];
+    if (buf.x.length > 0) {
+      const allDates = buf.x.map(x => new Date(x).getTime());
+      control.currentXRange = [Math.min(...allDates), Math.max(...allDates)];
+    }
+  }
+  
+  if (layout.yaxis.range) {
+    control.currentYRange = layout.yaxis.range;
+  } else {
+    // Si no hay zoom, usar todo el rango de datos
+    const buf = dataBuffers[varName];
+    if (buf.y.length > 0) {
+      control.currentYRange = [Math.min(...buf.y), Math.max(...buf.y)];
+    }
+  }
+}
+
+// ---- DETECTAR CAMBIOS DE ZOOM EN PLOTLY ----
+function setupPlotlyZoomListener(varName) {
+  const container = charts[varName].div;
+  
+  container.on('plotly_relayout', function(eventdata) {
+    const control = zoomControls[varName];
+    
+    // Actualizar rangos actuales cuando el usuario hace zoom manual
+    if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
+      control.currentXRange = [
+        new Date(eventdata['xaxis.range[0]']).getTime(),
+        new Date(eventdata['xaxis.range[1]']).getTime()
+      ];
+      
+      // Calcular y actualizar el slider X basado en el rango completo
+      updateSliderFromCurrentRange(varName, 'x');
+    }
+    
+    if (eventdata['yaxis.range[0]'] && eventdata['yaxis.range[1]']) {
+      control.currentYRange = [
+        eventdata['yaxis.range[0]'],
+        eventdata['yaxis.range[1]']
+      ];
+      
+      // Calcular y actualizar el slider Y basado en el rango completo
+      updateSliderFromCurrentRange(varName, 'y');
+    }
+    
+    // Si se resetea el zoom, volver a 100%
+    if (eventdata['xaxis.autorange'] || eventdata['yaxis.autorange']) {
+      control.zoomXSlider.value = '100';
+      control.zoomYSlider.value = '100';
+      control.zoomXValue.textContent = '100%';
+      control.zoomYValue.textContent = '100%';
+      updateCurrentRanges(varName);
+    }
+  });
+}
+
+// ---- ACTUALIZAR SLIDERS DESDE RANGO ACTUAL ----
+function updateSliderFromCurrentRange(varName, axis) {
+  const control = zoomControls[varName];
+  const buf = dataBuffers[varName];
+  
+  if (buf.x.length === 0) return;
+  
+  if (axis === 'x') {
+    const allDates = buf.x.map(x => new Date(x).getTime());
+    const fullRange = Math.max(...allDates) - Math.min(...allDates);
+    const currentRange = control.currentXRange[1] - control.currentXRange[0];
+    const zoomPercent = Math.round((fullRange / currentRange) * 100);
+    
+    // Limitar entre 10% y 200%
+    const limitedPercent = Math.max(10, Math.min(200, zoomPercent));
+    control.zoomXSlider.value = limitedPercent;
+    control.zoomXValue.textContent = limitedPercent + '%';
+    
+  } else if (axis === 'y') {
+    const allValues = buf.y;
+    const fullRange = Math.max(...allValues) - Math.min(...allValues);
+    const currentRange = control.currentYRange[1] - control.currentYRange[0];
+    const zoomPercent = Math.round((fullRange / currentRange) * 100);
+    
+    // Limitar entre 10% y 200%
+    const limitedPercent = Math.max(10, Math.min(200, zoomPercent));
+    control.zoomYSlider.value = limitedPercent;
+    control.zoomYValue.textContent = limitedPercent + '%';
   }
 }
 
@@ -232,12 +318,6 @@ function applyZoom(varName, axis, zoomPercent) {
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
-  
-  // Resetear sliders
-  zoomControls[varName].zoomXSlider.value = '30'; // Zoom más cercano para últimos datos
-  zoomControls[varName].zoomYSlider.value = '100';
-  zoomControls[varName].zoomXValue.textContent = '30%';
-  zoomControls[varName].zoomYValue.textContent = '100%';
   
   const last20 = buf.x.slice(-20).map(x => new Date(x));
   const lastValues = buf.y.slice(-20);
@@ -255,80 +335,52 @@ function zoomToLatest(varName) {
       'xaxis.autorange': false,
       'yaxis.autorange': false
     });
+    
+    // Actualizar sliders
+    setTimeout(() => {
+      updateCurrentRanges(varName);
+      updateSliderFromCurrentRange(varName, 'x');
+      updateSliderFromCurrentRange(varName, 'y');
+    }, 100);
   }
 }
 
 // ---- RESET ZOOM ----
 function resetZoom(varName) {
-  // Resetear sliders a 100%
-  zoomControls[varName].zoomXSlider.value = '100';
-  zoomControls[varName].zoomYSlider.value = '100';
-  zoomControls[varName].zoomXValue.textContent = '100%';
-  zoomControls[varName].zoomYValue.textContent = '100%';
-  
   Plotly.relayout(charts[varName].div, {
     'xaxis.autorange': true,
     'yaxis.autorange': true
   });
+  
+  zoomControls[varName].zoomXSlider.value = '100';
+  zoomControls[varName].zoomYSlider.value = '100';
+  zoomControls[varName].zoomXValue.textContent = '100%';
+  zoomControls[varName].zoomYValue.textContent = '100%';
 }
 
-// ---- SEGMENTOS SIMPLES ----
-function createSegments(xArray, yArray) {
-  if (xArray.length === 0) return [];
-  
-  const combined = xArray.map((x, i) => ({ 
-    x: new Date(x), 
-    y: yArray[i]
-  })).sort((a, b) => a.x - b.x);
-  
-  const segments = [];
-  let currentSegment = { x: [], y: [] };
-  const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
-  
-  for (let i = 0; i < combined.length; i++) {
-    const point = combined[i];
-    
-    if (currentSegment.x.length === 0) {
-      currentSegment.x.push(point.x);
-      currentSegment.y.push(point.y);
-    } else {
-      const lastTime = currentSegment.x[currentSegment.x.length - 1].getTime();
-      const timeDiff = point.x.getTime() - lastTime;
-      
-      if (timeDiff <= TWO_DAYS_MS) {
-        currentSegment.x.push(point.x);
-        currentSegment.y.push(point.y);
-      } else {
-        segments.push({...currentSegment});
-        currentSegment = { x: [point.x], y: [point.y] };
-      }
-    }
-  }
-  
-  if (currentSegment.x.length > 0) {
-    segments.push(currentSegment);
-  }
-  
-  return segments;
-}
-
-// ---- ACTUALIZAR GRÁFICA ----
+// ---- GRÁFICAS SIN ESPACIOS VACÍOS ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
-  const segments = createSegments(buf.x, buf.y);
+  if (buf.x.length === 0) return;
   
-  const traces = segments.map(segment => ({
-    x: segment.x,
-    y: segment.y,
+  // Ordenar por fecha y usar todos los datos en una sola línea
+  const combined = buf.x.map((x, i) => ({ 
+    x: new Date(x), 
+    y: buf.y[i]
+  })).sort((a, b) => a.x - b.x);
+  
+  const trace = {
+    x: combined.map(d => d.x),
+    y: combined.map(d => d.y),
     type: 'scatter',
     mode: 'lines',
     line: { color: colorMap[varName], width: 2 },
     name: varName,
     hovertemplate: '%{x|%d/%m %H:%M}<br>' + varName + ': %{y:.2f}<extra></extra>',
-    showlegend: false
-  }));
+    connectgaps: false // Esto evita líneas entre huecos grandes
+  };
   
-  Plotly.react(charts[varName].div, traces, charts[varName].layout, charts[varName].config);
+  Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
 }
 
 // ---- CREAR GRAFICAS ----
@@ -350,7 +402,7 @@ function createCharts(){
     charts[v] = {
       div: container,
       layout: {
-        title: { text: '', font: { color: '#00e5ff', size: 14 } }, // Sin título (ya está en controles)
+        title: { text: '', font: { color: '#00e5ff', size: 14 } },
         plot_bgcolor: '#071923',
         paper_bgcolor: '#071923',
         font: { color: '#eaf6f8' },
@@ -374,79 +426,13 @@ function createCharts(){
     };
 
     Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
+    setupPlotlyZoomListener(v);
+    
+    // Inicializar rangos actuales
+    setTimeout(() => {
+      updateCurrentRanges(v);
+    }, 500);
   });
 }
 
-// ---- ACTUALIZAR DATOS ----
-function pushPoint(varName, fecha, value){
-  const buf = dataBuffers[varName];
-  buf.x.push(fecha);
-  buf.y.push(value);
-  
-  if(buf.x.length > MAX_POINTS){
-    buf.x.shift();
-    buf.y.shift();
-  }
-  
-  updateChart(varName);
-}
-
-// ---- CARGAR HISTORICO ----
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const all = await res.json();
-    
-    if (!all || !Array.isArray(all)) return;
-    
-    variables.forEach(v => {
-      dataBuffers[v].x = [];
-      dataBuffers[v].y = [];
-    });
-
-    all.forEach(rec=>{
-      const fecha = new Date(rec.fecha);
-      variables.forEach(v=>{
-        if(rec[v] !== undefined && rec[v] !== null){
-          dataBuffers[v].x.push(fecha);
-          dataBuffers[v].y.push(rec[v]);
-        }
-      });
-    });
-
-    variables.forEach(v=>{
-      updateChart(v);
-    });
-
-  }catch(e){
-    console.error('Error cargando histórico',e);
-  }
-}
-
-// ---- SOCKET.IO ----
-socket.on('connect', ()=>console.log('Socket conectado'));
-socket.on('disconnect', ()=>console.log('Socket desconectado'));
-
-socket.on('nuevoDato', data=>{
-  const fecha = data.fecha ? new Date(data.fecha) : new Date();
-
-  if(data.latitud && data.longitud){
-    marker.setLatLng([data.latitud,data.longitud]);
-    map.setView([data.latitud,data.longitud],14);
-    marker.bindPopup(`📍 ${data.latitud.toFixed(5)}, ${data.longitud.toFixed(5)}`).openPopup();
-  }
-
-  variables.forEach(v=>{
-    if(data[v] !== undefined && data[v] !== null) {
-      pushPoint(v, fecha, data[v]);
-    }
-  });
-});
-
-// ---- INICIO ----
-(async function init(){
-  initMap();
-  createCharts();
-  await loadAllFromMongo();
-})();
+// ---- REST
