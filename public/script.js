@@ -12,6 +12,7 @@ const colorMap = {
 const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
+const zoomControls = {};
 variables.forEach(v=>dataBuffers[v] = {x:[],y:[]});
 
 // ---- INIT MAP ----
@@ -22,21 +23,100 @@ function initMap(){
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES SIMPLES ----
-function createChartControls(varName, container) {
+// ---- CONTROLES DE ZOOM CON SLIDERS ----
+function createZoomControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
     display: flex;
-    gap: 8px;
+    gap: 15px;
     margin-bottom: 10px;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    background: #102a3c;
+    border-radius: 6px;
+    flex-wrap: wrap;
   `;
   
-  // Botón "Actuales"
+  // Título
+  const title = document.createElement('span');
+  title.textContent = varName;
+  title.style.cssText = `
+    color: #00e5ff;
+    font-weight: 600;
+    min-width: 100px;
+    text-transform: capitalize;
+  `;
+  
+  // Controles de Zoom X
+  const zoomXDiv = document.createElement('div');
+  zoomXDiv.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 200px;
+  `;
+  
+  const zoomXLabel = document.createElement('span');
+  zoomXLabel.textContent = 'Zoom X:';
+  zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomXSlider = document.createElement('input');
+  zoomXSlider.type = 'range';
+  zoomXSlider.min = '1';
+  zoomXSlider.max = '100';
+  zoomXSlider.value = '100';
+  zoomXSlider.style.cssText = `
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #0f3a45;
+    outline: none;
+  `;
+  
+  const zoomXValue = document.createElement('span');
+  zoomXValue.textContent = '100%';
+  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  
+  // Controles de Zoom Y
+  const zoomYDiv = document.createElement('div');
+  zoomYDiv.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 200px;
+  `;
+  
+  const zoomYLabel = document.createElement('span');
+  zoomYLabel.textContent = 'Zoom Y:';
+  zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomYSlider = document.createElement('input');
+  zoomYSlider.type = 'range';
+  zoomYSlider.min = '1';
+  zoomYSlider.max = '100';
+  zoomYSlider.value = '100';
+  zoomYSlider.style.cssText = `
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #0f3a45;
+    outline: none;
+  `;
+  
+  const zoomYValue = document.createElement('span');
+  zoomYValue.textContent = '100%';
+  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  
+  // Botones de acción
+  const buttonsDiv = document.createElement('div');
+  buttonsDiv.style.cssText = `display: flex; gap: 5px;`;
+  
   const btnActuales = document.createElement('button');
-  btnActuales.innerHTML = '🕒 Últimos';
+  btnActuales.innerHTML = '🕒';
+  btnActuales.title = 'Últimos datos';
   btnActuales.style.cssText = `
-    padding: 6px 12px;
+    padding: 4px 8px;
     background: #7e57c2;
     color: white;
     border: none;
@@ -45,11 +125,11 @@ function createChartControls(varName, container) {
     font-size: 12px;
   `;
   
-  // Botón "Reset"
   const btnReset = document.createElement('button');
-  btnReset.innerHTML = '🔁 Reset';
+  btnReset.innerHTML = '🔁';
+  btnReset.title = 'Resetear zoom';
   btnReset.style.cssText = `
-    padding: 6px 12px;
+    padding: 4px 8px;
     background: #00e5ff;
     color: #002;
     border: none;
@@ -58,13 +138,138 @@ function createChartControls(varName, container) {
     font-size: 12px;
   `;
   
+  // Guardar referencias
+  zoomControls[varName] = {
+    zoomXSlider,
+    zoomYSlider,
+    zoomXValue,
+    zoomYValue
+  };
+  
+  // Event listeners para sliders
+  zoomXSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    zoomXValue.textContent = value + '%';
+    applyZoom(varName, 'x', parseInt(value));
+  });
+  
+  zoomYSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    zoomYValue.textContent = value + '%';
+    applyZoom(varName, 'y', parseInt(value));
+  });
+  
+  // Event listeners para botones
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
-  controlsDiv.appendChild(btnActuales);
-  controlsDiv.appendChild(btnReset);
+  // Ensamblar controles
+  zoomXDiv.appendChild(zoomXLabel);
+  zoomXDiv.appendChild(zoomXSlider);
+  zoomXDiv.appendChild(zoomXValue);
+  
+  zoomYDiv.appendChild(zoomYLabel);
+  zoomYDiv.appendChild(zoomYSlider);
+  zoomYDiv.appendChild(zoomYValue);
+  
+  buttonsDiv.appendChild(btnActuales);
+  buttonsDiv.appendChild(btnReset);
+  
+  controlsDiv.appendChild(title);
+  controlsDiv.appendChild(zoomXDiv);
+  controlsDiv.appendChild(zoomYDiv);
+  controlsDiv.appendChild(buttonsDiv);
   
   container.parentNode.insertBefore(controlsDiv, container);
+}
+
+// ---- APLICAR ZOOM CON SLIDERS ----
+function applyZoom(varName, axis, zoomPercent) {
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  // Obtener el rango completo de datos
+  const allDates = buf.x.map(x => new Date(x).getTime());
+  const allValues = buf.y;
+  
+  const minTime = Math.min(...allDates);
+  const maxTime = Math.max(...allDates);
+  const minValue = Math.min(...allValues);
+  const maxValue = Math.max(...allValues);
+  
+  const timeRange = maxTime - minTime;
+  const valueRange = maxValue - minValue;
+  
+  if (axis === 'x') {
+    // Zoom en X: reducir el rango temporal visible
+    const visibleTimeRange = timeRange * (zoomPercent / 100);
+    const centerTime = (minTime + maxTime) / 2;
+    
+    const newMinTime = centerTime - visibleTimeRange / 2;
+    const newMaxTime = centerTime + visibleTimeRange / 2;
+    
+    Plotly.relayout(charts[varName].div, {
+      'xaxis.range': [new Date(newMinTime), new Date(newMaxTime)],
+      'xaxis.autorange': false
+    });
+    
+  } else if (axis === 'y') {
+    // Zoom en Y: reducir el rango de valores visible
+    const visibleValueRange = valueRange * (zoomPercent / 100);
+    const centerValue = (minValue + maxValue) / 2;
+    
+    const newMinValue = centerValue - visibleValueRange / 2;
+    const newMaxValue = centerValue + visibleValueRange / 2;
+    
+    Plotly.relayout(charts[varName].div, {
+      'yaxis.range': [newMinValue, newMaxValue],
+      'yaxis.autorange': false
+    });
+  }
+}
+
+// ---- ZOOM A ÚLTIMOS DATOS ----
+function zoomToLatest(varName) {
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  // Resetear sliders
+  zoomControls[varName].zoomXSlider.value = '30'; // Zoom más cercano para últimos datos
+  zoomControls[varName].zoomYSlider.value = '100';
+  zoomControls[varName].zoomXValue.textContent = '30%';
+  zoomControls[varName].zoomYValue.textContent = '100%';
+  
+  const last20 = buf.x.slice(-20).map(x => new Date(x));
+  const lastValues = buf.y.slice(-20);
+  
+  if (last20.length > 0) {
+    const minX = new Date(Math.min(...last20.map(x => x.getTime())));
+    const maxX = new Date(Math.max(...last20.map(x => x.getTime())));
+    const minY = Math.min(...lastValues);
+    const maxY = Math.max(...lastValues);
+    const padding = (maxY - minY) * 0.1 || 1;
+    
+    Plotly.relayout(charts[varName].div, {
+      'xaxis.range': [minX, maxX],
+      'yaxis.range': [minY - padding, maxY + padding],
+      'xaxis.autorange': false,
+      'yaxis.autorange': false
+    });
+  }
+}
+
+// ---- RESET ZOOM ----
+function resetZoom(varName) {
+  // Resetear sliders a 100%
+  zoomControls[varName].zoomXSlider.value = '100';
+  zoomControls[varName].zoomYSlider.value = '100';
+  zoomControls[varName].zoomXValue.textContent = '100%';
+  zoomControls[varName].zoomYValue.textContent = '100%';
+  
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.autorange': true,
+    'yaxis.autorange': true
+  });
 }
 
 // ---- SEGMENTOS SIMPLES ----
@@ -126,38 +331,6 @@ function updateChart(varName) {
   Plotly.react(charts[varName].div, traces, charts[varName].layout, charts[varName].config);
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS ----
-function zoomToLatest(varName) {
-  const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
-  
-  const last15 = buf.x.slice(-15).map(x => new Date(x));
-  const lastValues = buf.y.slice(-15);
-  
-  if (last15.length > 0) {
-    const minX = new Date(Math.min(...last15.map(x => x.getTime())));
-    const maxX = new Date(Math.max(...last15.map(x => x.getTime())));
-    const minY = Math.min(...lastValues);
-    const maxY = Math.max(...lastValues);
-    const padding = (maxY - minY) * 0.1 || 1;
-    
-    Plotly.relayout(charts[varName].div, {
-      'xaxis.range': [minX, maxX],
-      'yaxis.range': [minY - padding, maxY + padding],
-      'xaxis.autorange': false,
-      'yaxis.autorange': false
-    });
-  }
-}
-
-// ---- RESET ZOOM ----
-function resetZoom(varName) {
-  Plotly.relayout(charts[varName].div, {
-    'xaxis.autorange': true,
-    'yaxis.autorange': true
-  });
-}
-
 // ---- CREAR GRAFICAS ----
 function createCharts(){
   variables.forEach(v=>{
@@ -168,16 +341,16 @@ function createCharts(){
       container.id = divId;
       container.style.width = '100%';
       container.style.height = '350px';
-      container.style.marginBottom = '20px';
+      container.style.marginBottom = '10px';
       document.querySelector('#graficaPlotly').appendChild(container);
     }
 
-    createChartControls(v, container);
+    createZoomControls(v, container);
 
     charts[v] = {
       div: container,
       layout: {
-        title: { text: v, font: { color: '#00e5ff', size: 14 } },
+        title: { text: '', font: { color: '#00e5ff', size: 14 } }, // Sin título (ya está en controles)
         plot_bgcolor: '#071923',
         paper_bgcolor: '#071923',
         font: { color: '#eaf6f8' },
@@ -190,7 +363,7 @@ function createCharts(){
           gridcolor: '#0f3a45',
           autorange: true
         },
-        margin: { l: 60, r: 30, t: 40, b: 60 },
+        margin: { l: 60, r: 30, t: 10, b: 60 },
         showlegend: false
       },
       config: {
@@ -227,13 +400,11 @@ async function loadAllFromMongo(){
     
     if (!all || !Array.isArray(all)) return;
     
-    // Limpiar buffers
     variables.forEach(v => {
       dataBuffers[v].x = [];
       dataBuffers[v].y = [];
     });
 
-    // Cargar datos
     all.forEach(rec=>{
       const fecha = new Date(rec.fecha);
       variables.forEach(v=>{
@@ -244,7 +415,6 @@ async function loadAllFromMongo(){
       });
     });
 
-    // Render inicial
     variables.forEach(v=>{
       updateChart(v);
     });
