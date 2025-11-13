@@ -1,6 +1,10 @@
-// ---- Config ----
-const socket = io();
-const MAX_POINTS = 5000;
+// ---- CONFIG ----
+const SOCKET_CONNECT_ORIGIN = window.location.origin;
+const LIVE_BUFFER_MAX = 50;
+const TABLE_REFRESH_MS = 30000;
+const LAZY_POINTS = 1000; // puntos a renderizar por gráfica inicialmente
+
+const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
 const variables = [
   "humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"
@@ -11,130 +15,118 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-// ---- Mapa (Leaflet) ----
-let map = L.map('map').setView([4.65, -74.1], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
-let marker = null;
+// ---- Datos ----
+let allData = [];    // histórico completo
+let liveBuffer = []; // últimos datos en vivo
 
-// ---- Traces iniciales para Plotly ----
-let traces = variables.map(v => ({
-  x: [],
-  y: [],
-  mode: 'lines+markers', // 🔹 con marcadores
-  name: v,
-  line: { color: colorMap[v], width: 2 },
-  marker: { size: 6 },
-  hovertemplate: '%{x}<br>' + v + ': %{y}<extra></extra>'
-}));
+// ---- MAPA ----
+let map, marker;
+function initMap(){
+  map = L.map('map').setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
+}
 
-// ---- Layout azul/cyan ----
-let layout = {
-  title: { text: 'Sensores — series de tiempo', font: { color: '#00e5ff' } },
-  plot_bgcolor: '#071923',
-  paper_bgcolor: '#071923',
-  font: { color: '#eaf6f8' },
-  xaxis: {
-    rangeselector: {
-      buttons: [
-        { step: 'hour', stepmode: 'backward', count: 1, label: '1h' },
-        { step: 'hour', stepmode: 'backward', count: 6, label: '6h' },
-        { step: 'day', stepmode: 'backward', count: 1, label: '1d' },
-        { step: 'all', label: 'Todo' }
-      ],
-      bgcolor: '#04161a',
-      activecolor: '#00e5ff'
-    },
-    rangeslider: { visible: true, bgcolor: '#021014' },
-    type: 'date',
-    gridcolor: '#0f3a45',
-    tickcolor: '#0f3a45'
-  },
-  yaxis: { gridcolor: '#0f3a45' },
-  legend: { orientation: "h", y: -0.25 }
-};
+function updateMap(lat, lon){
+  if(!map || !marker || lat===undefined || lon===undefined) return;
+  marker.setLatLng([lat,lon]);
+  map.setView([lat,lon],14);
+  marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
+}
 
-// Crear la gráfica vacía
-Plotly.newPlot('graficaPlotly', traces, layout, { responsive: true });
+// ---- Crear gráficas individuales con Plotly WebGL ----
+const charts = {};
 
-// ---- Datos buffers ----
-const dataBuffers = {};
-variables.forEach(v => { dataBuffers[v] = { x: [], y: [] }; });
+function createCharts(){
+  const container = document.getElementById("graficaPlotlyContainer");
+  container.innerHTML = ""; // limpiar antes
 
-// ---- Helper: actualizar buffers ----
-function pushPoint(varName, fecha, value){
-  const buf = dataBuffers[varName];
-  buf.x.push(fecha);
-  buf.y.push(value);
-  if(buf.x.length > MAX_POINTS){ buf.x.shift(); buf.y.shift(); }
+  variables.forEach(v=>{
+    const div = document.createElement("div");
+    div.id = `chart_${v}`;
+    div.style.width = "100%";
+    div.style.height = "400px";
+    div.style.marginBottom = "20px";
+    container.appendChild(div);
+
+    charts[v] = {
+      divId: div.id,
+      variable: v,
+      layout: {
+        title: { text: v, font: { color: '#00e5ff' } },
+        plot_bgcolor: '#071923',
+        paper_bgcolor: '#071923',
+        font: { color: '#eaf6f8' },
+        xaxis: { type: 'date', gridcolor:'#0f3a45' },
+        yaxis: { gridcolor:'#0f3a45' },
+        showlegend: true
+      },
+      config: { responsive:true },
+      data: [{ x:[], y:[], type:'scattergl', mode:'lines', line:{color: colorMap[v], width:2}, name:v }]
+    };
+
+    Plotly.newPlot(div.id, charts[v].data, charts[v].layout, charts[v].config);
+  });
+}
+
+// ---- Función para renderizar lazy data ----
+function renderChartLazy(v){
+  const chart = charts[v];
+  if(!chart) return;
+  const dataArray = allData.concat(liveBuffer);
+  if(!dataArray.length) return;
+
+  // ordenar ascendente por fecha
+  const sorted = dataArray.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+
+  // lazy loading: mostrar solo últimos LAZY_POINTS
+  const sliceData = sorted.slice(-LAZY_POINTS);
+
+  const x = sliceData.map(d=> new Date(d.fecha));
+  const y = sliceData.map(d=> d[v] ?? null);
+
+  Plotly.react(chart.divId, [{ x, y, type:'scattergl', mode:'lines', line:{color: colorMap[v], width:2}, name:v }], chart.layout, chart.config);
 }
 
 // ---- Cargar histórico desde Mongo ----
 async function loadAllFromMongo(){
   try{
     const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const all = await res.json();
-    all.sort((a,b)=> new Date(a.fecha)-new Date(b.fecha));
-
-    all.forEach(rec => {
-      const fecha = new Date(rec.fecha);
-      variables.forEach(v=>{
-        if(rec[v] !== undefined && rec[v] !== null) pushPoint(v, fecha, rec[v]);
-      });
-    });
-
-    // Actualizar gráfico completo
-    const newData = variables.map(v=>({
-      x: dataBuffers[v].x.slice(),
-      y: dataBuffers[v].y.slice(),
-      mode:'lines+markers',
-      name:v,
-      line:{color:colorMap[v],width:2},
-      marker:{size:6}
-    }));
-    Plotly.react('graficaPlotly', newData, layout, {responsive:true});
-    console.log('✅ Histórico cargado:', all.length,'registros');
-
-  }catch(e){ console.error('❌ Error cargando histórico:', e); }
+    if(!res.ok) throw new Error("Error "+res.status);
+    allData = await res.json();
+  }catch(e){ console.error(e); }
 }
 
-// Llamar carga inicial
-loadAllFromMongo();
+// ---- SOCKET ----
+socket.on("connect", ()=> console.log("🔌 Socket conectado"));
+socket.on("disconnect", ()=> console.log("🔌 Socket desconectado"));
 
-// ---- Evento en vivo Socket.IO ----
-socket.on("nuevoDato", (data)=>{
-  const fecha = data.fecha ? new Date(data.fecha) : new Date();
-
-  // Actualizar mapa
-  if(data.latitud!==undefined && data.longitud!==undefined){
-    const lat = Number(data.latitud), lon = Number(data.longitud);
-    if(!marker) marker = L.marker([lat, lon]).addTo(map);
-    else marker.setLatLng([lat, lon]);
-    marker.bindPopup(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
-    map.setView([lat, lon], 14);
-  }
-
-  const xs=[], ys=[], traceIndices=[];
-  variables.forEach((v,idx)=>{
-    const val = data[v];
-    xs.push([fecha]);
-    ys.push([ val!==undefined?val:null ]);
-    traceIndices.push(idx);
-    if(val!==undefined && val!==null) pushPoint(v, fecha, val);
-  });
-
-  try{
-    Plotly.extendTraces('graficaPlotly',{x:xs,y:ys},traceIndices);
-  }catch(e){
-    // fallback
-    const newData = variables.map(v=>({
-      x: dataBuffers[v].x.slice(),
-      y: dataBuffers[v].y.slice(),
-      mode:'lines+markers',
-      name:v,
-      line:{color:colorMap[v],width:2},
-      marker:{size:6}
-    }));
-    Plotly.react('graficaPlotly', newData, layout, {responsive:true});
-  }
+socket.on("historico", (data)=>{
+  allData = data.map(d=> ({...d, fecha:new Date(d.fecha)}));
+  variables.forEach(v=> renderChartLazy(v));
 });
+
+socket.on("nuevoDato", (data)=>{
+  const record = {...data, fecha: data.fecha ? new Date(data.fecha) : new Date()};
+  liveBuffer.push(record);
+  if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
+
+  variables.forEach(v=> renderChartLazy(v));
+
+  if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud, data.longitud);
+});
+
+// ---- CICLOS ----
+async function refreshDisplay(){
+  variables.forEach(v=> renderChartLazy(v));
+  await loadAllFromMongo(); // refresco histórico cada cierto tiempo
+}
+
+// ---- INICIO ----
+(async function init(){
+  initMap();
+  createCharts();
+  await loadAllFromMongo();
+  variables.forEach(v=> renderChartLazy(v));
+  setInterval(refreshDisplay, TABLE_REFRESH_MS);
+})();
