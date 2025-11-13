@@ -50,7 +50,7 @@ function createCharts(){
         name: v,
         line: {color: colorMap[v], width: 2},
         hovertemplate: '%{x}<br>'+v+': %{y}<extra></extra>',
-        connectgaps: false // ← EVITA LÍNEAS ENTRE DATOS DISCONEXOS
+        connectgaps: false
       },
       layout: {
         title: {text:v, font:{color:'#00e5ff'}},
@@ -93,18 +93,41 @@ function createCharts(){
     
     // EVENT LISTENER MEJORADO PARA ZOOM
     container.on('plotly_relayout', function(eventdata) {
-      // Detectar cuando se hace zoom
+      console.log('🔍 Evento relayout:', eventdata);
+      
+      // Detectar cuando se hace zoom (rango específico)
       if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
         isZoomActive = true;
         currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
+        console.log('🔍 Zoom activado:', currentXRange);
         
         // Auto-ajustar eje Y para los datos visibles
         autoAdjustYAxis(v, currentXRange);
       }
-      // Detectar cuando se vuelve al rango completo
-      else if (eventdata['xaxis.autorange'] || eventdata['autosize']) {
+      // Detectar cuando se hace clic en botones del rangeselector
+      else if (eventdata['xaxis.range'] && eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
+        isZoomActive = true;
+        currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
+        console.log('🔍 Range selector activado:', currentXRange);
+        autoAdjustYAxis(v, currentXRange);
+      }
+      // Detectar cuando se vuelve al rango completo (botón "Todo" o doble clic)
+      else if (eventdata['xaxis.autorange'] === true || 
+               eventdata['xaxis.range[0]'] === undefined ||
+               Object.keys(eventdata).length === 0) {
         isZoomActive = false;
         currentXRange = null;
+        console.log('🔍 Zoom desactivado - Volviendo a autorange');
+        
+        // Reactivar autorange completo
+        Plotly.relayout(container, {
+          'yaxis.autorange': true,
+          'yaxis.range': null
+        });
+      }
+      // Detectar autosize (redimensionamiento)
+      else if (eventdata['autosize']) {
+        console.log('🔍 Autosize detectado');
         Plotly.relayout(container, {'yaxis.autorange': true});
       }
     });
@@ -130,6 +153,8 @@ function autoAdjustYAxis(varName, xRange) {
     const minY = Math.min(...visibleData);
     const maxY = Math.max(...visibleData);
     const padding = (maxY - minY) * 0.1; // 10% de padding
+    
+    console.log(`📊 Ajustando Y para ${varName}: ${minY.toFixed(2)} - ${maxY.toFixed(2)}`);
     
     // Aplicar nuevo rango al eje Y
     Plotly.relayout(charts[varName].div, {
@@ -159,8 +184,8 @@ function pushPoint(varName, fecha, value){
     mode: 'lines',
     line: {color: colorMap[varName], width: 2},
     name: varName,
-    connectgaps: false // ← IMPORTANTE: evita líneas entre huecos
-  }], charts[varName].layout, charts[varName].config);
+    connectgaps: false
+  }], charts[varName].layout, charts[v].config);
   
   // Si hay zoom activo, re-ajustar el eje Y
   if (isZoomActive && currentXRange) {
@@ -209,7 +234,7 @@ async function loadAllFromMongo(){
         mode: 'lines',
         line: {color: colorMap[v], width: 2},
         name: v,
-        connectgaps: false // ← EVITA EL EFECTO "CUADRADO"
+        connectgaps: false
       }], charts[v].layout, charts[v].config);
     });
 
@@ -238,19 +263,6 @@ socket.on('nuevoDato', data=>{
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
     }
-  });
-});
-
-// Manejo de histórico inicial via Socket.IO
-socket.on('historico', (ultimos) => {
-  console.log('📊 Histórico inicial recibido:', ultimos.length);
-  ultimos.reverse().forEach(rec => {
-    const fecha = new Date(rec.fecha);
-    variables.forEach(v => {
-      if(rec[v] !== undefined && rec[v] !== null) {
-        pushPoint(v, fecha, rec[v]);
-      }
-    });
   });
 });
 
