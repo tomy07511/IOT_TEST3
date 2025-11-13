@@ -20,108 +20,42 @@ let liveBuffer = [];
 let allData = [];
 let lastMqttTimestamp = 0;
 
-// ---- CREAR TIME LINE ----
-function createTimeline(v){
-  const container = document.createElement('div');
-  container.style.display = 'flex';
-  container.style.alignItems = 'center';
-  container.style.marginTop = '6px';
-  container.style.gap = '6px';
-
-  const labelStart = document.createElement('label');
-  labelStart.textContent = 'Desde:';
-  const inputStart = document.createElement('input');
-  inputStart.type = 'date';
-  
-  const labelEnd = document.createElement('label');
-  labelEnd.textContent = 'Hasta:';
-  const inputEnd = document.createElement('input');
-  inputEnd.type = 'date';
-
-  container.appendChild(labelStart);
-  container.appendChild(inputStart);
-  container.appendChild(labelEnd);
-  container.appendChild(inputEnd);
-
-  // Renderizar según fechas seleccionadas
-  function updateChartRange(){
-    const chart = charts[v];
-    if(!chart._allLabels) return;
-    let startDate = inputStart.value ? new Date(inputStart.value) : null;
-    let endDate = inputEnd.value ? new Date(inputEnd.value) : null;
-
-    let filteredLabels = [];
-    let filteredData = [];
-
-    for(let i=0; i<chart._allLabels.length; i++){
-      const lblDate = new Date(chart._allLabels[i]);
-      if((!startDate || lblDate >= startDate) && (!endDate || lblDate <= endDate)){
-        filteredLabels.push(chart._allLabels[i]);
-        filteredData.push(chart._allData[i]);
-      }
-    }
-
-    chart.data.labels = filteredLabels;
-    chart.data.datasets[0].data = filteredData;
-    chart.update();
-  }
-
-  inputStart.onchange = updateChartRange;
-  inputEnd.onchange = updateChartRange;
-
-  return container;
-}
-
-// ---- CREAR GRÁFICOS ----
+// ---- CREAR GRÁFICOS ECHARTS ----
 function createCharts() {
   variables.forEach(v => {
     const el = document.getElementById(v);
     if(!el) return;
-    const ctx = el.getContext('2d');
 
-    charts[v] = new Chart(ctx, {
-      type:'line',
-      data:{labels:[],datasets:[{
-        label:v,
-        data:[],
-        borderColor:colorMap[v],
-        backgroundColor:colorMap[v]+'33',
-        fill:true,
-        tension:0.25,
-        pointRadius:4
-      }]},
-      options:{
-        responsive:true,
-        maintainAspectRatio:false,
-        interaction:{mode:'nearest',intersect:false},
-        animation:{duration:400,easing:'linear'},
-        plugins:{
-          legend:{labels:{color:'#fff'}},
-          zoom:{
-            pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},mode:'x'}
-          }
-        },
-        scales:{
-          x:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}},
-          y:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}}
-        }
-      }
-    });
+    const chart = echarts.init(el, null, {renderer:'canvas', useDirtyRect:true});
+    charts[v] = chart;
 
-    charts[v].visiblePoints = 15;
+    const option = {
+      title: { text: v, left: 'center', textStyle:{color:'#00e5ff'} },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type:'time', axisLabel:{color:'#ccc'}, splitLine:{lineStyle:{color:'#1e3a4c'}} },
+      yAxis: { type:'value', min:'dataMin', axisLabel:{color:'#ccc'}, splitLine:{lineStyle:{color:'#1e3a4c'}} },
+      series: [{
+        type:'line',
+        showSymbol:false,
+        areaStyle:{opacity:0.2},
+        data: [],
+        lineStyle:{color: colorMap[v]},
+      }],
+      dataZoom:[
+        { type:'inside', xAxisIndex:0 },
+        { type:'slider', xAxisIndex:0, bottom: '5%' }
+      ]
+    };
+
+    chart.setOption(option);
 
     // BOTON RESET ZOOM
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
-
-    // CREAR TIME LINE
-    const timeline = createTimeline(v);
-    btnReset.parentElement.appendChild(timeline);
+    if(btnReset) btnReset.onclick = () => chart.dispatchAction({ type:'dataZoom', start: 0, end: 100 });
   });
 }
 
-// ---- FUNCION RENDER (actualización automática y timeline) ----
+// ---- FUNCION RENDER ----
 function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
@@ -131,15 +65,17 @@ function renderChart(v){
   // ordenar por fecha ascendente
   dataArray.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
-  chart._allLabels = dataArray.map(d => new Date(d.fecha).toLocaleString());
-  chart._allData = dataArray.map(d => d[v] ?? null);
+  const labels = dataArray.map(d => new Date(d.fecha));
+  const values = dataArray.map(d => d[v] ?? null);
 
   // Mostrar últimos 15 por defecto
-  const total = chart._allLabels.length;
-  const start = Math.max(0, total - chart.visiblePoints);
-  chart.data.labels = chart._allLabels.slice(start);
-  chart.data.datasets[0].data = chart._allData.slice(start);
-  chart.update();
+  const total = labels.length;
+  const startIndex = Math.max(0, total - 15);
+
+  chart.setOption({
+    series:[{ data: labels.map((time,i)=>[time, values[i]]) }],
+    dataZoom: [{ startValue: labels[startIndex], endValue: labels[total-1] }]
+  });
 }
 
 // ---- SOCKET ----
@@ -152,18 +88,14 @@ socket.on("nuevoDato", (data) => {
   if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v=>{
-    renderChart(v); // actualizar siempre los últimos 15
-  });
+  variables.forEach(v => renderChart(v));
 
   if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
-    renderChart(v);
-  });
+  variables.forEach(v => renderChart(v));
 });
 
 // ---- MONGO ----
@@ -172,7 +104,7 @@ async function loadLatestFromMongo(){
     const res = await fetch('/api/data/latest');
     if(!res.ok) throw new Error('Error '+res.status);
     const data = await res.json();
-    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
+    return data.map(d => ({...d,fecha:new Date(d.fecha)}));
   }catch(e){console.error(e); return [];}
 }
 
