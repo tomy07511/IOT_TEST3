@@ -22,33 +22,58 @@ function initMap(){
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- MEJORAR DISEÑO DE CONTROLES ----
+// ---- CREAR CONTROLES MEJORADOS CON LAZY LOAD VISUAL ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
+  controlsDiv.className = `chart-controls-${varName}`;
   controlsDiv.style.cssText = `
     display: flex;
     gap: 12px;
     margin-bottom: 15px;
     justify-content: flex-end;
     align-items: center;
-    padding: 8px 12px;
-    background: rgba(16, 42, 60, 0.8);
-    border-radius: 8px;
+    padding: 12px 16px;
+    background: linear(135deg, #102a3c, #0a1f2d);
+    border-radius: 12px;
     border: 1px solid #0f3a45;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
   `;
   
-  // Título de la variable
+  // Efecto hover suave en todo el panel de controles
+  controlsDiv.addEventListener('mouseenter', () => {
+    controlsDiv.style.boxShadow = '0 6px 20px rgba(0, 229, 255, 0.2)';
+    controlsDiv.style.borderColor = '#00e5ff';
+  });
+  
+  controlsDiv.addEventListener('mouseleave', () => {
+    controlsDiv.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+    controlsDiv.style.borderColor = '#0f3a45';
+  });
+
+  // Título de la variable con icono
   const title = document.createElement('span');
-  title.textContent = varName;
+  title.innerHTML = `📊 <strong>${varName}</strong>`;
   title.style.cssText = `
     color: #00e5ff;
     font-weight: 600;
     font-size: 14px;
     margin-right: auto;
     text-transform: capitalize;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   `;
   
-  // Botón "Actuales"
+  // Contenedor para botones
+  const buttonsContainer = document.createElement('div');
+  buttonsContainer.style.cssText = `
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  `;
+  
+  // Botón "Actuales" mejorado
   const btnActuales = document.createElement('button');
   btnActuales.innerHTML = '🕒 Últimos 15';
   btnActuales.title = 'Zoom a los últimos 15 datos';
@@ -57,132 +82,228 @@ function createChartControls(varName, container) {
     background: linear(135deg, #7e57c2, #5e35b1);
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(126, 87, 194, 0.3);
+    box-shadow: 0 2px 8px rgba(126, 87, 194, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   `;
   
-  // Botón "Reset Zoom"
+  // Botón "Reset Zoom" mejorado
   const btnReset = document.createElement('button');
-  btnReset.innerHTML = '🔁 Reset Zoom';
+  btnReset.innerHTML = '🔁 Reset';
   btnReset.title = 'Resetear zoom a vista completa';
   btnReset.style.cssText = `
     padding: 8px 16px;
     background: linear(135deg, #00e5ff, #00bcd4);
     color: #002;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(0, 229, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 229, 255, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
   `;
   
-  // Efectos hover mejorados
-  [btnActuales, btnReset].forEach(btn => {
+  // Efectos hover premium
+  const setupButtonHover = (btn, hoverColor) => {
     btn.addEventListener('mouseenter', () => {
-      btn.style.transform = 'translateY(-2px)';
-      btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+      btn.style.transform = 'translateY(-2px) scale(1.05)';
+      btn.style.boxShadow = `0 6px 16px ${hoverColor}`;
+      btn.style.filter = 'brightness(1.1)';
     });
     
     btn.addEventListener('mouseleave', () => {
-      btn.style.transform = 'translateY(0)';
-      btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+      btn.style.transform = 'translateY(0) scale(1)';
+      btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
+      btn.style.filter = 'brightness(1)';
     });
     
     btn.addEventListener('mousedown', () => {
-      btn.style.transform = 'translateY(0)';
+      btn.style.transform = 'translateY(0) scale(0.98)';
     });
-  });
+  };
+  
+  setupButtonHover(btnActuales, 'rgba(126, 87, 194, 0.6)');
+  setupButtonHover(btnReset, 'rgba(0, 229, 255, 0.6)');
   
   // Event listeners
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
+  buttonsContainer.appendChild(btnActuales);
+  buttonsContainer.appendChild(btnReset);
+  
   controlsDiv.appendChild(title);
-  controlsDiv.appendChild(btnActuales);
-  controlsDiv.appendChild(btnReset);
+  controlsDiv.appendChild(buttonsContainer);
   
   // Insertar antes del contenedor de la gráfica
   container.parentNode.insertBefore(controlsDiv, container);
 }
 
-// ---- FUNCIÓN PARA DIVIDIR DATOS EN SEGMENTOS (ELIMINA LÍNEAS ENTRE HUECOS) ----
-function createDataSegments(xArray, yArray) {
+// ---- FUNCIÓN MEJORADA PARA COMPRIMIR TIEMPO ----
+function createCompressedSegments(xArray, yArray) {
   if (xArray.length === 0) return [];
   
-  const segments = [];
-  let currentSegment = { x: [], y: [] };
+  // Ordenar por fecha
+  const combined = xArray.map((x, i) => ({ 
+    x: new Date(x), 
+    y: yArray[i],
+    originalTime: new Date(x).getTime()
+  })).sort((a, b) => a.x - b.x);
   
-  // Ordenar por fecha por si acaso
-  const combined = xArray.map((x, i) => ({ x: new Date(x), y: yArray[i] }))
-    .sort((a, b) => a.x - b.x);
+  const segments = [];
+  let currentSegment = { x: [], y: [], originalTimes: [] };
+  let compressedTime = 0; // Tiempo comprimido (relativo)
+  const timeStep = 1; // Paso de tiempo entre puntos (unidades arbitrarias)
+  
+  const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000; // 2 días en milisegundos
   
   for (let i = 0; i < combined.length; i++) {
     const currentPoint = combined[i];
     
     if (currentSegment.x.length === 0) {
       // Primer punto del segmento
-      currentSegment.x.push(currentPoint.x);
+      currentSegment.x.push(compressedTime);
       currentSegment.y.push(currentPoint.y);
+      currentSegment.originalTimes.push(currentPoint.originalTime);
     } else {
-      const lastPoint = combined[i - 1];
-      const timeDiff = currentPoint.x - lastPoint.x;
-      const maxGap = 2 * 60 * 60 * 1000; // 2 horas en milisegundos
+      const lastOriginalTime = currentSegment.originalTimes[currentSegment.originalTimes.length - 1];
+      const timeDiff = currentPoint.originalTime - lastOriginalTime;
       
-      if (timeDiff <= maxGap) {
-        // Mismo segmento (menos de 2 horas de diferencia)
-        currentSegment.x.push(currentPoint.x);
+      if (timeDiff <= TWO_DAYS_MS) {
+        // Mismo segmento (menos de 2 días de diferencia)
+        compressedTime += timeStep;
+        currentSegment.x.push(compressedTime);
         currentSegment.y.push(currentPoint.y);
+        currentSegment.originalTimes.push(currentPoint.originalTime);
       } else {
-        // Hueco detectado (> 2 horas), crear nuevo segmento
-        segments.push(currentSegment);
-        currentSegment = { x: [currentPoint.x], y: [currentPoint.y] };
+        // Hueco mayor a 2 días - crear nuevo segmento
+        segments.push({
+          x: [...currentSegment.x],
+          y: [...currentSegment.y],
+          originalTimes: [...currentSegment.originalTimes]
+        });
+        
+        // Reiniciar tiempo comprimido para nuevo segmento
+        compressedTime = 0;
+        currentSegment = { 
+          x: [compressedTime], 
+          y: [currentPoint.y],
+          originalTimes: [currentPoint.originalTime]
+        };
       }
     }
   }
   
   // Agregar el último segmento
   if (currentSegment.x.length > 0) {
-    segments.push(currentSegment);
+    segments.push({
+      x: currentSegment.x,
+      y: currentSegment.y,
+      originalTimes: currentSegment.originalTimes
+    });
   }
   
   return segments;
 }
 
-// ---- ZOOM A ÚLTIMOS 15 DATOS ----
+// ---- ACTUALIZAR GRÁFICA CON TIEMPO COMPRIMIDO ----
+function updateChart(varName) {
+  const buf = dataBuffers[varName];
+  const segments = createCompressedSegments(buf.x, buf.y);
+  
+  // Crear trazas para cada segmento
+  const traces = segments.map((segment, index) => ({
+    x: segment.x,
+    y: segment.y,
+    type: 'scatter',
+    mode: 'lines+markers',
+    line: {
+      color: colorMap[varName], 
+      width: 2.5, 
+      shape: 'spline',
+      smoothing: 1.3
+    },
+    marker: {
+      size: 4,
+      color: colorMap[varName],
+      opacity: 0.7,
+      symbol: 'circle'
+    },
+    name: segments.length > 1 ? `${varName} (Segmento ${index + 1})` : varName,
+    hovertemplate: `%{meta|%d/%m %H:%M}<br>${varName}: %{y:.2f}<extra></extra>`,
+    meta: segment.originalTimes.map(t => new Date(t)),
+    showlegend: segments.length > 1
+  }));
+  
+  // Layout especial para tiempo comprimido
+  const compressedLayout = {
+    ...charts[varName].layout,
+    xaxis: {
+      ...charts[varName].layout.xaxis,
+      type: 'linear', // Cambiamos a linear para tiempo comprimido
+      title: { text: 'Tiempo Comprimido', font: { color: '#a0d2e0', size: 12 } },
+      tickformat: ',d',
+      gridcolor: '#0f3a45',
+      zerolinecolor: '#0f3a45'
+    },
+    annotations: segments.length > 1 ? [
+      {
+        x: 0.5,
+        y: -0.25,
+        xref: 'paper',
+        yref: 'paper',
+        text: `📅 Gráfica comprimida - ${segments.length} segmentos de datos`,
+        showarrow: false,
+        font: { color: '#00e5ff', size: 12 },
+        bgcolor: 'rgba(16, 42, 60, 0.9)',
+        bordercolor: '#00e5ff',
+        borderwidth: 1,
+        borderpad: 4,
+        bordercolor: '#0f3a45'
+      }
+    ] : []
+  };
+  
+  // Actualizar la gráfica
+  Plotly.react(charts[varName].div, traces, compressedLayout, charts[varName].config);
+}
+
+// ---- ZOOM A ÚLTIMOS 15 DATOS (ACTUALIZADO PARA TIEMPO COMPRIMIDO) ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
-  // Ordenar por fecha y tomar últimos 15
-  const combined = buf.x.map((x, i) => ({x: new Date(x), y: buf.y[i]}))
-    .sort((a, b) => a.x - b.x)
-    .slice(-15);
+  // En tiempo comprimido, los últimos 15 puntos son simplemente los últimos del buffer
+  const lastIndex = Math.max(0, buf.x.length - 15);
+  const latestData = buf.y.slice(lastIndex);
   
-  if (combined.length > 0) {
-    const xValues = combined.map(d => d.x);
-    const yValues = combined.map(d => d.y);
+  if (latestData.length > 0) {
+    const minY = Math.min(...latestData);
+    const maxY = Math.max(...latestData);
+    const paddingY = (maxY - minY) * 0.15 || 1;
     
-    const minX = new Date(Math.min(...xValues.map(x => x.getTime())));
-    const maxX = new Date(Math.max(...xValues.map(x => x.getTime())));
-    const minY = Math.min(...yValues);
-    const maxY = Math.max(...yValues);
-    const paddingY = (maxY - minY) * 0.15 || 1; // 15% padding
+    // En tiempo comprimido, hacemos zoom en X para mostrar los últimos 20 unidades
+    const segments = createCompressedSegments(buf.x, buf.y);
+    if (segments.length > 0) {
+      const lastSegment = segments[segments.length - 1];
+      const maxX = Math.max(...lastSegment.x);
+      const minX = Math.max(0, maxX - 20); // Mostrar últimas 20 unidades
+      
+      Plotly.relayout(charts[varName].div, {
+        'xaxis.range': [minX, maxX],
+        'yaxis.range': [minY - paddingY, maxY + paddingY],
+        'xaxis.autorange': false,
+        'yaxis.autorange': false
+      });
+    }
     
-    // Aplicar zoom con animación suave
-    Plotly.relayout(charts[varName].div, {
-      'xaxis.range': [minX, maxX],
-      'yaxis.range': [minY - paddingY, maxY + paddingY],
-      'xaxis.autorange': false,
-      'yaxis.autorange': false
-    });
-    
-    console.log(`🔍 Zoom a últimos ${combined.length} datos de ${varName}`);
+    console.log(`🔍 Zoom a últimos ${latestData.length} datos de ${varName}`);
   }
 }
 
@@ -196,7 +317,7 @@ function resetZoom(varName) {
   console.log(`🔄 Zoom resetado en ${varName}`);
 }
 
-// ---- CREAR GRAFICAS CON SEGMENTOS ----
+// ---- CREAR GRAFICAS ----
 function createCharts(){
   variables.forEach(v=>{
     const divId = 'grafica_'+v;
@@ -205,39 +326,28 @@ function createCharts(){
       container = document.createElement('div');
       container.id = divId;
       container.style.width = '100%';
-      container.style.height = '420px';
+      container.style.height = '450px'; // Un poco más alto para los controles
       container.style.marginTop = '8px';
       container.style.borderRadius = '8px';
       container.style.overflow = 'hidden';
+      container.style.background = '#071923';
       document.querySelector('#graficaPlotly').appendChild(container);
     }
 
-    // Crear controles mejorados para esta gráfica
+    // Crear controles premium para esta gráfica
     createChartControls(v, container);
 
-    // Inicializar con array vacío de trazas (se llenará con segmentos)
+    // Inicializar gráfica
     charts[v] = {
       div: container,
-      traces: [], // Ahora será un array de trazas (segmentos)
       layout: {
-        title: {text: '', font: {color: '#00e5ff', size: 16}}, // Quitamos título ya que está en controles
+        title: {text: '', font: {color: '#00e5ff', size: 16}},
         plot_bgcolor:'#071923',
         paper_bgcolor:'#071923',
         font:{color:'#eaf6f8', family: 'Segoe UI, system-ui, Arial'},
         xaxis: {
-          rangeslider:{visible:true, bgcolor:'#021014', bordercolor:'#0f3a45'},
-          rangeselector:{
-            buttons:[
-              {step:'hour', stepmode:'backward', count:1, label:'1h'},
-              {step:'hour', stepmode:'backward', count:6, label:'6h'},
-              {step:'day', stepmode:'backward', count:1, label:'1d'},
-              {step:'all', label:'Todo'}
-            ],
-            bgcolor:'#04161a',
-            activecolor:'#00e5ff',
-            font: {color: '#eaf6f8'}
-          },
-          type:'date',
+          type: 'linear',
+          title: { text: 'Tiempo Comprimido', font: { color: '#a0d2e0', size: 12 } },
           gridcolor:'#0f3a45',
           zerolinecolor: '#0f3a45',
           tickcolor:'#0f3a45',
@@ -251,8 +361,8 @@ function createCharts(){
           autorange: true,
           fixedrange: false
         },
-        legend:{orientation:'h', y:-0.2, font: {color: '#eaf6f8'}},
-        margin: {l:70, r:40, t:20, b:100},
+        legend:{orientation:'h', y:-0.25, font: {color: '#eaf6f8'}},
+        margin: {l:70, r:40, t:10, b:80},
         hovermode: 'closest',
         hoverlabel: {
           bgcolor: '#102a3c',
@@ -275,37 +385,7 @@ function createCharts(){
     } catch (error) {
       console.error(`❌ Error creando gráfica ${v}:`, error);
     }
-    
-    // Event listener para zoom
-    container.on('plotly_relayout', function(eventdata) {
-      if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
-        autoAdjustYAxis(v, [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']]);
-      } else if (eventdata['xaxis.autorange'] || eventdata['autosize']) {
-        Plotly.relayout(container, {'yaxis.autorange': true});
-      }
-    });
   });
-}
-
-// ---- ACTUALIZAR GRÁFICA CON SEGMENTOS ----
-function updateChart(varName) {
-  const buf = dataBuffers[varName];
-  const segments = createDataSegments(buf.x, buf.y);
-  
-  // Crear trazas para cada segmento
-  const traces = segments.map(segment => ({
-    x: segment.x,
-    y: segment.y,
-    type: 'scatter',
-    mode: 'lines',
-    line: {color: colorMap[varName], width: 2.5, shape: 'spline'},
-    name: varName,
-    hovertemplate: `%{x|%d/%m %H:%M}<br>${varName}: %{y:.2f}<extra></extra>`,
-    showlegend: segments.length > 1 // Solo mostrar leyenda si hay múltiples segmentos
-  }));
-  
-  // Actualizar la gráfica
-  Plotly.react(charts[varName].div, traces, charts[varName].layout, charts[varName].config);
 }
 
 // ---- ACTUALIZAR BUFFER Y PLOT ----
@@ -319,7 +399,7 @@ function pushPoint(varName, fecha, value){
     buf.y.shift();
   }
   
-  // Actualizar gráfica con segmentos
+  // Actualizar gráfica con tiempo comprimido
   updateChart(varName);
 }
 
@@ -354,12 +434,12 @@ async function loadAllFromMongo(){
       });
     });
 
-    // Render inicial con segmentos
+    // Render inicial con tiempo comprimido
     variables.forEach(v=>{
       updateChart(v);
     });
 
-    console.log('✅ Históricos cargados y segmentados');
+    console.log('✅ Históricos cargados con tiempo comprimido');
   }catch(e){
     console.error('❌ Error cargando histórico',e);
   }
