@@ -1,74 +1,28 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Panel de Sensores — IoT</title>
-
-  <!-- Leaflet + Fullscreen plugin -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="utf-8">
+  <title>Mapa + Intraday Chart en Tiempo Real</title>
+  <!-- ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <!-- Leaflet para el mapa -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
-  <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
-
   <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
-
-  <!-- ECharts CDN -->
-  <script type="module" src="script.js"></script>
-
   <style>
-    :root{
-      --bg:#0b1d2a;
-      --card:#102a3c;
-      --accent:#00e5ff;
-      --muted:#1e3a4c;
-      --text:#eaf6f8;
-    }
-    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
-    header{padding:12px 18px;text-align:center;color:var(--accent);}
-    .grid {
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-      gap:16px;
-      padding:16px;
-      align-items:start;
-    }
-    .card {
-      background:var(--card);
-      border-radius:12px;
-      padding:12px;
-      box-shadow:0 6px 18px rgba(0,229,255,0.06);
-      min-height:260px;
-      position:relative;
-      overflow:hidden;
-    }
-    .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
-    .echart{width:100%;height:220px}
-    #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
-    #map{width:100%;height:420px;border-radius:8px}
+    #map { height: 300px; margin-bottom:20px; }
+    #main { width: 100%; height:400px; }
   </style>
 </head>
 <body>
-  <header><h2>Panel de Sensores — IoT</h2></header>
 
-  <!-- MAP -->
-  <div id="mapWrap" class="card">
-    <h4>Ubicación GPS</h4>
-    <div id="map"></div>
-  </div>
+  <!-- Contenedor del mapa -->
+  <div id="map"></div>
+  <!-- Contenedor del gráfico -->
+  <div id="main"></div>
 
-  <!-- GRÁFICAS -->
-  <div class="grid">
-    <div class="card"><h4>Humedad</h4><div id="humedad" class="echart"></div></div>
-    <div class="card"><h4>Temperatura</h4><div id="temperatura" class="echart"></div></div>
-    <div class="card"><h4>Conductividad</h4><div id="conductividad" class="echart"></div></div>
-    <div class="card"><h4>pH</h4><div id="ph" class="echart"></div></div>
-    <div class="card"><h4>Nitrógeno</h4><div id="nitrogeno" class="echart"></div></div>
-    <div class="card"><h4>Fósforo</h4><div id="fosforo" class="echart"></div></div>
-    <div class="card"><h4>Potasio</h4><div id="potasio" class="echart"></div></div>
-    <div class="card"><h4>Batería (ADC)</h4><div id="bateria" class="echart"></div></div>
-    <div class="card"><h4>Corriente (raw)</h4><div id="corriente" class="echart"></div></div>
-  </div>
+  <!-- Script para manejar mapa y gráfica -->
+  <script src="script.js"></script>
 </body>
 </html>
