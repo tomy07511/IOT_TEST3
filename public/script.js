@@ -54,20 +54,20 @@ function createCharts() {
           }
         },
         scales:{
-          x:{
-            ticks:{color:'#ccc'},
-            grid:{color:'#1e3a4c'}
-          },
-          y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
+          x:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}},
+          y:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}}
         }
       }
     });
 
     charts[v].displayMode = 'live';
+    charts[v].scrollIndex = 0; // índice para flechas izquierda/derecha
+    charts[v].visiblePoints = 15; // cuántos puntos se ven en la ventana histórica
 
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
+    // === BOTONES HISTORICO/LIVE ===
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
     btnLive.className = 'btn';
@@ -91,12 +91,38 @@ function createCharts() {
       btnHist.disabled = true;
       btnLive.disabled = false;
       charts[v].resetZoom();
-      renderChart(v); // 👈 ahora muestra todo el histórico
+      charts[v].scrollIndex = 0;
+      renderChart(v);
+    };
+
+    // === FLECHAS IZQ/DER ===
+    const btnLeft = document.createElement('button');
+    btnLeft.textContent = '◀';
+    btnLeft.className = 'btn';
+    btnLeft.style.marginLeft = '6px';
+    btnLeft.onclick = () => {
+      const chart = charts[v];
+      if(chart.displayMode!=='historical') return;
+      chart.scrollIndex = Math.max(0, chart.scrollIndex - 1);
+      renderChart(v);
+    };
+
+    const btnRight = document.createElement('button');
+    btnRight.textContent = '▶';
+    btnRight.className = 'btn';
+    btnRight.style.marginLeft = '6px';
+    btnRight.onclick = () => {
+      const chart = charts[v];
+      if(chart.displayMode!=='historical') return;
+      chart.scrollIndex = Math.min(chart._allLabels.length - chart.visiblePoints, chart.scrollIndex + 1);
+      renderChart(v);
     };
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
     actionsDiv.appendChild(btnHist);
+    actionsDiv.appendChild(btnLeft);
+    actionsDiv.appendChild(btnRight);
   });
 }
 
@@ -110,19 +136,24 @@ function renderChart(v, autoScroll=false){
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
 
-  // Asignamos todos los datos sin recorte
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = dataset;
+  chart._allLabels = labels;
+  chart._allData = dataset;
+
+  if(chart.displayMode==='historical'){
+    const start = chart.scrollIndex;
+    const end = Math.min(start + chart.visiblePoints, labels.length);
+    chart.data.labels = labels.slice(start, end);
+    chart.data.datasets[0].data = dataset.slice(start, end);
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = dataset;
+  }
 
   chart.update();
 
-  // Si viene de "Datos actuales", centramos la vista en los últimos
-  if(autoScroll){
-    const len = chart.data.labels.length;
-    if(len > 0){
-      const wrapper = chart.canvas.parentElement;
-      wrapper.scrollLeft = wrapper.scrollWidth;
-    }
+  if(autoScroll && chart.displayMode==='live'){
+    const wrapper = chart.canvas.parentElement;
+    wrapper.scrollLeft = wrapper.scrollWidth;
   }
 }
 
