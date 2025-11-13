@@ -25,16 +25,8 @@ function createCharts() {
   variables.forEach(v => {
     const el = document.getElementById(v);
     if(!el) return;
-
-    // contenedor con scroll real
-    const wrapper = document.createElement("div");
-    wrapper.style.overflowX = "auto";
-    wrapper.style.width = "100%";
-    wrapper.style.paddingBottom = "10px";
-    el.parentElement.insertBefore(wrapper, el);
-    wrapper.appendChild(el);
-
     const ctx = el.getContext('2d');
+
     charts[v] = new Chart(ctx, {
       type:'line',
       data:{labels:[],datasets:[{
@@ -44,14 +36,13 @@ function createCharts() {
         backgroundColor:colorMap[v]+'33',
         fill:true,
         tension:0.25,
-        pointRadius:5,
-        pointHoverRadius:7
+        pointRadius:4
       }]},
       options:{
         responsive:true,
         maintainAspectRatio:false,
         interaction:{mode:'nearest',intersect:false},
-        animation:{duration:600,easing:"easeOutQuart"},
+        animation:{duration:400,easing:'linear'},
         plugins:{
           legend:{labels:{color:'#fff'}},
           zoom:{
@@ -63,67 +54,61 @@ function createCharts() {
           }
         },
         scales:{
-          x:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}},
+          x:{
+            ticks:{
+              color:'#ccc',
+              callback:function(val,index){
+                return this.chart.data.labels.length <= 15 ? this.chart.data.labels[index] : '';
+              }
+            },
+            grid:{color:'#1e3a4c'}
+          },
           y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
         }
       }
     });
 
     charts[v].displayMode = 'live';
-    charts[v].currentIndex = 0; // índice del histórico
-    charts[v].windowSize = 15; // cuantos puntos mostrar al mismo tiempo
 
-    // ---- Botones ----
+    // --- BOTONES ---
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
+    if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
-    btnLive.className='btn';
-    btnLive.style.marginLeft='6px';
+    btnLive.className = 'btn';
+    btnLive.style.marginLeft = '6px';
     btnLive.disabled = true;
     btnLive.onclick = () => {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
-      renderChart(v,true);
+      renderChart(v, true);
     };
 
     const btnHist = document.createElement('button');
     btnHist.textContent = 'Histórico';
-    btnHist.className='btn';
-    btnHist.style.marginLeft='6px';
-    btnHist.disabled=false;
-    btnHist.onclick = async () => {
+    btnHist.className = 'btn';
+    btnHist.style.marginLeft = '6px';
+    btnHist.disabled = false;
+    btnHist.onclick = () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
-      await loadAllFromMongo();
-      charts[v].currentIndex = Math.max(0, allData.length - charts[v].windowSize);
       renderChart(v);
     };
 
     const btnLeft = document.createElement('button');
     btnLeft.textContent = '<<';
-    btnLeft.className='btn';
-    btnLeft.style.marginLeft='6px';
-    btnLeft.onclick = () => {
-      const chart = charts[v];
-      if(chart.displayMode !== 'historical') return;
-      chart.currentIndex = Math.max(0, chart.currentIndex - chart.windowSize);
-      renderChart(v);
-    };
+    btnLeft.className = 'btn';
+    btnLeft.style.marginLeft = '6px';
+    btnLeft.onclick = () => shiftHistorical(v, -5);
 
     const btnRight = document.createElement('button');
     btnRight.textContent = '>>';
-    btnRight.className='btn';
-    btnRight.style.marginLeft='6px';
-    btnRight.onclick = () => {
-      const chart = charts[v];
-      if(chart.displayMode !== 'historical') return;
-      chart.currentIndex = Math.min(allData.length - chart.windowSize, chart.currentIndex + chart.windowSize);
-      renderChart(v);
-    };
+    btnRight.className = 'btn';
+    btnRight.style.marginLeft = '6px';
+    btnRight.onclick = () => shiftHistorical(v, 5);
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
@@ -131,6 +116,23 @@ function createCharts() {
     actionsDiv.appendChild(btnLeft);
     actionsDiv.appendChild(btnRight);
   });
+}
+
+// ---- HISTÓRICO CON FLECHAS ----
+function shiftHistorical(v, step){
+  const chart = charts[v];
+  if(!chart || chart.displayMode !== 'historical') return;
+
+  const total = chart._allLabels.length;
+  const range = Math.min(30, total); // mostrar hasta 30 datos
+  let start = chart._histStart ?? (total - range);
+  start += step;
+  start = Math.max(0, Math.min(start, total - range));
+  chart._histStart = start;
+
+  chart.data.labels = chart._allLabels.slice(start, start + range);
+  chart.data.datasets[0].data = chart._allData.slice(start, start + range);
+  chart.update();
 }
 
 // ---- RENDER ----
@@ -144,21 +146,26 @@ function renderChart(v, autoScroll=false){
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
 
+  chart._allLabels = labels;
+  chart._allData = dataset;
+
   if(chart.displayMode==='historical'){
-    const start = chart.currentIndex;
-    const end = Math.min(start + chart.windowSize, labels.length);
-    chart.data.labels = labels.slice(start,end);
-    chart.data.datasets[0].data = dataset.slice(start,end);
+    const total = labels.length;
+    const range = Math.min(30, total);
+    chart._histStart = total - range;
+
+    chart.data.labels = labels.slice(chart._histStart, chart._histStart + range);
+    chart.data.datasets[0].data = dataset.slice(chart._histStart, chart._histStart + range);
   } else {
     chart.data.labels = labels;
     chart.data.datasets[0].data = dataset;
-    if(autoScroll){
-      const wrapper = chart.chart.canvas.parentElement;
-      wrapper.scrollLeft = wrapper.scrollWidth;
-    }
   }
 
-  chart.update('active');
+  chart.update();
+
+  if(autoScroll && chart.displayMode==='live'){
+    chart.resetZoom();
+  }
 }
 
 // ---- SOCKET ----
@@ -166,21 +173,23 @@ socket.on("connect", () => console.log("🔌 Socket conectado"));
 socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
 
 socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha? new Date(data.fecha): new Date()};
+  const record = {...data, fecha:data.fecha ? new Date(data.fecha) : new Date()};
   liveBuffer.push(record);
-  if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
+  if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v=>{
-    if(charts[v].displayMode==='live') renderChart(v,true);
+  variables.forEach(v => {
+    if(charts[v].displayMode==='live') renderChart(v);
   });
 
-  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
+  if(data.latitud!==undefined && data.longitud!==undefined){
+    updateMap(data.latitud,data.longitud);
+  }
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=>{
+  variables.forEach(v => {
     if(charts[v].displayMode==='historical') renderChart(v);
   });
 });
@@ -227,12 +236,12 @@ async function refreshDisplay(){
   for(const v of variables){
     if(charts[v].displayMode==='live'){
       if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-        renderChart(v,true);
+        renderChart(v);
       } else {
         const mongoLatest = await loadLatestFromMongo();
         if(mongoLatest.length>0){
           allData = mongoLatest;
-          renderChart(v,true);
+          renderChart(v);
         }
       }
     }
@@ -245,7 +254,7 @@ async function refreshDisplay(){
   createCharts();
   await loadAllFromMongo();
   const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v,true);});
+  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
 
   setInterval(refreshDisplay,5000);
   setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
