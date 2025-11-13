@@ -8,80 +8,75 @@
   <!-- Plotly -->
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-
-  <!-- Leaflet Fullscreen -->
-  <link href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" rel="stylesheet" />
+  <!-- Leaflet + Fullscreen plugin -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
   <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
 
-  <!-- Socket.io -->
+  <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
 
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f4f4f4;
+    :root{
+      --bg:#0b1d2a;
+      --card:#102a3c;
+      --accent:#00e5ff;
+      --muted:#1e3a4c;
+      --text:#eaf6f8;
     }
-
-    #contenedor-principal {
-      width: 95%;
-      margin: auto;
-      margin-top: 20px;
+    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
+    header{padding:12px 18px;text-align:center;color:var(--accent);}
+    .container { width:95%; margin:14px auto; max-width:1200px; }
+    .card {
+      background:var(--card);
+      border-radius:12px;
+      padding:12px;
+      box-shadow:0 6px 18px rgba(0,229,255,0.06);
+      margin-bottom:16px;
     }
-
-    #map {
-      width: 100%;
-      height: 350px;
-      border-radius: 10px;
-      margin-bottom: 30px;
-    }
-
-    #graficaPlotly {
-      width: 100%;
-      height: 450px;
-      border-radius: 10px;
-      background: white;
-    }
-
+    h1,h2,h3{margin:6px 0;color:var(--accent)}
+    #map { width:100%; height:420px; border-radius:8px; }
+    #graficaPlotly { width:100%; height:480px; border-radius:8px; }
     #btnHistoricos {
-      margin-top: 25px;
-      width: 100%;
-      padding: 12px;
-      background: #007bff;
-      border: none;
-      border-radius: 5px;
-      color: white;
-      font-size: 18px;
-      cursor: pointer;
+      display:inline-block;
+      margin:14px 0 40px 0;
+      padding:10px 16px;
+      background:var(--accent);
+      color:#002;
+      border:none;
+      border-radius:8px;
+      cursor:pointer;
+      font-weight:600;
     }
-
-    #btnHistoricos:hover {
-      background: #0056b3;
+    @media (max-width:420px){
+      #map{height:320px}
+      #graficaPlotly{height:320px}
     }
   </style>
 </head>
-
 <body>
+  <header><h2>Panel de Sensores — IoT</h2></header>
 
-  <div id="contenedor-principal">
+  <div class="container">
+    <!-- MAP -->
+    <div class="card">
+      <h3>Ubicación GPS</h3>
+      <div id="map"></div>
+    </div>
 
-    <h2>Panel de Sensores</h2>
+    <!-- PLOTLY -->
+    <div class="card">
+      <h3>Serie de tiempos (Range Slider & Selector)</h3>
+      <div id="graficaPlotly"></div>
+    </div>
 
-    <!-- ================= MAPA ================= -->
-    <div id="map"></div>
-
-    <!-- ================= GRAFICA PLOTLY ================= -->
-    <div id="graficaPlotly"></div>
-
-    <!-- ================= BOTÓN HISTÓRICOS ================= -->
-    <button id="btnHistoricos" onclick="window.location.href='historicos.html'">
-      Ver Históricos
-    </button>
-
+    <!-- BOTÓN A HISTÓRICOS -->
+    <div style="text-align:center;">
+      <button id="btnHistoricos" onclick="window.open('historicos.html', '_blank')">
+        Ver Datos Históricos Tabla
+      </button>
+    </div>
   </div>
 
   <script src="/script.js"></script>
