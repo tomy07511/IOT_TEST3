@@ -26,12 +26,13 @@ function createCharts() {
     const el = document.getElementById(v);
     if(!el) return;
 
-    // contenedor con scroll horizontal real
+    // contenedor con scroll horizontal permanente
     const wrapper = document.createElement("div");
     wrapper.style.overflowX = "auto";
     wrapper.style.width = "100%";
     wrapper.style.paddingBottom = "10px";
     wrapper.style.scrollBehavior = "smooth";
+    wrapper.style.whiteSpace = "nowrap"; // importante para scroll continuo
     el.parentElement.insertBefore(wrapper, el);
     wrapper.appendChild(el);
 
@@ -45,7 +46,7 @@ function createCharts() {
         backgroundColor:colorMap[v]+'33',
         fill:true,
         tension:0.25,
-        pointRadius:5,        // 🔹 más grandes
+        pointRadius:5,
         pointHoverRadius:7
       }]},
       options:{
@@ -65,8 +66,6 @@ function createCharts() {
               mode:'x',
               onZoomComplete({chart}) {
                 const wrapper = chart.canvas.parentElement;
-                wrapper.style.overflowX = "auto";
-                // 🔹 centra scroll en el área del zoom
                 wrapper.scrollLeft = (wrapper.scrollWidth - wrapper.clientWidth) / 2;
               }
             }
@@ -76,13 +75,11 @@ function createCharts() {
           x:{
             ticks:{
               color:'#ccc',
-              callback:function(val,index){ 
+              callback:function(val,index){
                 const total = this.chart.data.labels.length;
-                // 🔹 Mostrar fechas si <=15 o si está en zoom cercano
-                if (this.chart.scales.x.max - this.chart.scales.x.min < 20) {
-                  return this.chart.data.labels[index];
-                }
-                return (total <= 15) ? this.chart.data.labels[index] : '';
+                const visibleCount = this.chart.scales.x.ticks.length;
+                if (visibleCount <= 15) return this.chart.data.labels[index];
+                return '';
               }
             },
             grid:{color:'#1e3a4c'}
@@ -94,6 +91,7 @@ function createCharts() {
 
     charts[v].displayMode = 'live';
 
+    // --- Botones ---
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick=()=>charts[v].resetZoom();
 
@@ -108,8 +106,7 @@ function createCharts() {
       btnHist.disabled = false;
       charts[v].resetZoom();
       renderChart(v, true);
-
-      // 🔹 lleva la vista al final (últimos datos)
+      // lleva el scroll al final (últimos puntos)
       const wrapper = charts[v].chart.canvas.parentElement;
       wrapper.scrollLeft = wrapper.scrollWidth;
     };
@@ -119,14 +116,14 @@ function createCharts() {
     btnHist.className='btn';
     btnHist.style.marginLeft='6px';
     btnHist.disabled=false;
-    btnHist.onclick = () => {
+    btnHist.onclick = async () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
       charts[v].resetZoom();
+      await loadAllFromMongo();
       renderChart(v);
       const wrapper = charts[v].chart.canvas.parentElement;
-      wrapper.style.overflowX = "auto"; // 🔹 asegura scroll visible
       wrapper.scrollLeft = 0;
     };
 
@@ -141,7 +138,7 @@ function renderChart(v, autoScroll=false){
   const chart = charts[v];
   if(!chart) return;
 
-  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
+  const dataArray = chart.displayMode==='live' ? liveBuffer : allData;
   if(!Array.isArray(dataArray)||!dataArray.length) return;
 
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
@@ -151,7 +148,6 @@ function renderChart(v, autoScroll=false){
   chart.data.datasets[0].data = dataset;
   chart.update('active');
 
-  // 🔹 auto scroll al final cuando vuelves a datos actuales
   if(autoScroll){
     const wrapper = chart.chart.canvas.parentElement;
     wrapper.scrollLeft = wrapper.scrollWidth;
