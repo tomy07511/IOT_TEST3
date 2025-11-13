@@ -5,154 +5,85 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Panel de Sensores</title>
 
-  <!-- Chart.js + Zoom plugin -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 
-  <!-- Leaflet + Fullscreen plugin -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+  <!-- Leaflet Fullscreen -->
+  <link href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
 
-  <!-- Socket.IO -->
+  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
 
   <style>
-    :root{
-      --bg:#0b1d2a;
-      --card:#102a3c;
-      --accent:#00e5ff;
-      --muted:#1e3a4c;
-      --text:#eaf6f8;
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
     }
-    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
-    header{padding:12px 18px;text-align:center;color:var(--accent);}
-    .grid {
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-      gap:16px;
-      padding:16px;
-      align-items:start;
+
+    #contenedor-principal {
+      width: 95%;
+      margin: auto;
+      margin-top: 20px;
     }
-    .card {
-      background:var(--card);
-      border-radius:12px;
-      padding:12px;
-      box-shadow:0 6px 18px rgba(0,229,255,0.06);
-      min-height:120px;
-      position:relative;
-      overflow:hidden;
+
+    #map {
+      width: 100%;
+      height: 350px;
+      border-radius: 10px;
+      margin-bottom: 30px;
     }
-    .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
-    canvas{width:100% !important;height:220px !important; display:block}
-    .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
-    .btn {
-      background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
+
+    #graficaPlotly {
+      width: 100%;
+      height: 450px;
+      border-radius: 10px;
+      background: white;
     }
-    .btn[disabled]{opacity:.5;cursor:default}
-    /* Mapa */
-    #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
-    #map{width:100%;height:420px;border-radius:8px}
-    @media (max-width:420px){
-      canvas{height:180px !important}
-      #map{height:320px}
+
+    #btnHistoricos {
+      margin-top: 25px;
+      width: 100%;
+      padding: 12px;
+      background: #007bff;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    #btnHistoricos:hover {
+      background: #0056b3;
     }
   </style>
 </head>
+
 <body>
-  <header><h2>Panel de Sensores — IoT</h2></header>
 
-  <!-- MAP -->
-  <div id="mapWrap" class="card">
-    <h4>Ubicación GPS</h4>
+  <div id="contenedor-principal">
+
+    <h2>Panel de Sensores</h2>
+
+    <!-- ================= MAPA ================= -->
     <div id="map"></div>
-  </div>
 
-  <!-- GRÁFICAS -->
-  <div class="grid" id="chartsGrid">
-    <div class="card">
-      <h4>Humedad</h4>
-      <canvas id="humedad"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="humedad">Reset Zoom</button>
-      </div>
-    </div>
+    <!-- ================= GRAFICA PLOTLY ================= -->
+    <div id="graficaPlotly"></div>
 
-    <div class="card">
-      <h4>Temperatura</h4>
-      <canvas id="temperatura"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="temperatura">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Conductividad</h4>
-      <canvas id="conductividad"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="conductividad">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>pH</h4>
-      <canvas id="ph"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="ph">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Nitrógeno</h4>
-      <canvas id="nitrogeno"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="nitrogeno">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Fósforo</h4>
-      <canvas id="fosforo"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="fosforo">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Potasio</h4>
-      <canvas id="potasio"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="potasio">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Batería (ADC)</h4>
-      <canvas id="bateria"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="bateria">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Corriente (raw)</h4>
-      <canvas id="corriente"></canvas>
-      <div class="chart-actions">
-        <button class="btn" data-reset="corriente">Reset Zoom</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- BOTÓN A HISTÓRICOS -->
-  <div style="text-align:center; margin:16px;">
-    <button onclick="window.open('historicos.html', '_blank')" 
-            style="padding:10px 16px; border:none; border-radius:8px; background:var(--accent); color:#002; cursor:pointer;">
-      Ver Datos Históricos Tabla
+    <!-- ================= BOTÓN HISTÓRICOS ================= -->
+    <button id="btnHistoricos" onclick="window.location.href='historicos.html'">
+      Ver Históricos
     </button>
+
   </div>
 
-  <!-- SCRIPT: lógica (socket, charts, mapa, mongo load) -->
-  <script src="script.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>
