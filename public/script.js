@@ -9,10 +9,14 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-const MAX_POINTS = 5000; // para WebGL, mantener límite
-const dataBuffers = {};   // buffers de datos históricos + en tiempo real
-const charts = {};        // referencia a cada gráfica
+const MAX_POINTS = 5000;
+const dataBuffers = {};
+const charts = {};
 variables.forEach(v=>dataBuffers[v] = {x:[],y:[]});
+
+// Variables para controlar el auto-ajuste
+let isZoomActive = false;
+let currentXRange = null;
 
 // ---- INIT MAP ----
 let map, marker;
@@ -20,9 +24,6 @@ function initMap(){
   map = L.map('map').setView([4.65,-74.1],12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
-  
-  // Agregar control de pantalla completa
-  map.addControl(new L.Control.Fullscreen());
 }
 
 // ---- CREAR GRAFICAS ----
@@ -44,11 +45,12 @@ function createCharts(){
       trace: {
         x: [],
         y: [],
-        type: 'scattergl', // WebGL
+        type: 'scattergl',
         mode: 'lines',
         name: v,
-        line: {color: colorMap[v], width:2},
-        hovertemplate: '%{x}<br>'+v+': %{y}<extra></extra>'
+        line: {color: colorMap[v], width: 2},
+        hovertemplate: '%{x}<br>'+v+': %{y}<extra></extra>',
+        connectgaps: false // ← EVITA LÍNEAS ENTRE DATOS DISCONEXOS
       },
       layout: {
         title: {text:v, font:{color:'#00e5ff'}},
@@ -73,8 +75,8 @@ function createCharts(){
         },
         yaxis:{
           gridcolor:'#0f3a45',
-          autorange: true,  // AUTO-AJUSTE DEL EJE Y
-          fixedrange: false // Permitir zoom manual en Y también
+          autorange: true,
+          fixedrange: false
         },
         legend:{orientation:'h',y:-0.25},
         margin: {l:60, r:30, t:50, b:80}
@@ -89,16 +91,52 @@ function createCharts(){
 
     Plotly.newPlot(container, [charts[v].trace], charts[v].layout, charts[v].config);
     
-    // EVENT LISTENER PARA AUTO-AJUSTE DE Y AL HACER ZOOM
+    // EVENT LISTENER MEJORADO PARA ZOOM
     container.on('plotly_relayout', function(eventdata) {
-      // Cuando hay cambio de zoom/rango en X, forzar auto-range en Y
-      if (eventdata['xaxis.range[0]'] || eventdata['xaxis.range'] || eventdata['autosize']) {
-        setTimeout(() => {
-          Plotly.relayout(container, {'yaxis.autorange': true});
-        }, 100);
+      // Detectar cuando se hace zoom
+      if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
+        isZoomActive = true;
+        currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
+        
+        // Auto-ajustar eje Y para los datos visibles
+        autoAdjustYAxis(v, currentXRange);
+      }
+      // Detectar cuando se vuelve al rango completo
+      else if (eventdata['xaxis.autorange'] || eventdata['autosize']) {
+        isZoomActive = false;
+        currentXRange = null;
+        Plotly.relayout(container, {'yaxis.autorange': true});
       }
     });
   });
+}
+
+// ---- FUNCIÓN PARA AUTO-AJUSTAR EJE Y ----
+function autoAdjustYAxis(varName, xRange) {
+  const buf = dataBuffers[varName];
+  const startTime = new Date(xRange[0]).getTime();
+  const endTime = new Date(xRange[1]).getTime();
+  
+  // Filtrar datos dentro del rango de zoom
+  const visibleData = [];
+  for (let i = 0; i < buf.x.length; i++) {
+    const time = new Date(buf.x[i]).getTime();
+    if (time >= startTime && time <= endTime) {
+      visibleData.push(buf.y[i]);
+    }
+  }
+  
+  if (visibleData.length > 0) {
+    const minY = Math.min(...visibleData);
+    const maxY = Math.max(...visibleData);
+    const padding = (maxY - minY) * 0.1; // 10% de padding
+    
+    // Aplicar nuevo rango al eje Y
+    Plotly.relayout(charts[varName].div, {
+      'yaxis.range': [minY - padding, maxY + padding],
+      'yaxis.autorange': false
+    });
+  }
 }
 
 // ---- ACTUALIZAR BUFFER Y PLOT ----
@@ -106,19 +144,28 @@ function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
   buf.y.push(value);
+  
+  // Mantener límite de puntos
   if(buf.x.length > MAX_POINTS){
     buf.x.shift();
     buf.y.shift();
   }
   
-  Plotly.react(charts[varName].div,{
+  // Actualizar gráfica
+  Plotly.react(charts[varName].div, [{
     x: buf.x,
     y: buf.y,
-    type:'scattergl',
-    mode:'lines',
-    line:{color:colorMap[varName],width:2},
-    name: varName
-  }, charts[varName].layout, charts[varName].config);
+    type: 'scattergl',
+    mode: 'lines',
+    line: {color: colorMap[varName], width: 2},
+    name: varName,
+    connectgaps: false // ← IMPORTANTE: evita líneas entre huecos
+  }], charts[varName].layout, charts[varName].config);
+  
+  // Si hay zoom activo, re-ajustar el eje Y
+  if (isZoomActive && currentXRange) {
+    autoAdjustYAxis(varName, currentXRange);
+  }
 }
 
 // ---- CARGAR HISTORICO ----
@@ -133,8 +180,16 @@ async function loadAllFromMongo(){
       return;
     }
     
+    // Ordenar por fecha
     all.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
+    // Limpiar buffers antes de cargar
+    variables.forEach(v => {
+      dataBuffers[v].x = [];
+      dataBuffers[v].y = [];
+    });
+
+    // Cargar datos
     all.forEach(rec=>{
       const fecha = new Date(rec.fecha);
       variables.forEach(v=>{
@@ -145,15 +200,16 @@ async function loadAllFromMongo(){
       });
     });
 
-    // render inicial
+    // Render inicial
     variables.forEach(v=>{
-      Plotly.react(charts[v].div,[{
+      Plotly.react(charts[v].div, [{
         x: dataBuffers[v].x,
         y: dataBuffers[v].y,
-        type:'scattergl',
-        mode:'lines',
-        line:{color:colorMap[v],width:2},
-        name:v
+        type: 'scattergl',
+        mode: 'lines',
+        line: {color: colorMap[v], width: 2},
+        name: v,
+        connectgaps: false // ← EVITA EL EFECTO "CUADRADO"
       }], charts[v].layout, charts[v].config);
     });
 
@@ -170,16 +226,18 @@ socket.on('disconnect', ()=>console.log('🔌 Socket desconectado'));
 socket.on('nuevoDato', data=>{
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
 
-  // actualizar mapa
+  // Actualizar mapa
   if(data.latitud!==undefined && data.longitud!==undefined){
     marker.setLatLng([data.latitud,data.longitud]);
     map.setView([data.latitud,data.longitud],14);
     marker.setPopupContent(`📍 Lat:${data.latitud.toFixed(5)}<br>Lon:${data.longitud.toFixed(5)}`).openPopup();
   }
 
-  // actualizar graficas
+  // Actualizar gráficas
   variables.forEach(v=>{
-    if(data[v] !== undefined && data[v] !== null) pushPoint(v, fecha, data[v]);
+    if(data[v] !== undefined && data[v] !== null) {
+      pushPoint(v, fecha, data[v]);
+    }
   });
 });
 
@@ -202,8 +260,3 @@ socket.on('historico', (ultimos) => {
   createCharts();
   await loadAllFromMongo();
 })();
-
-// ---- MANEJO DE ERRORES GLOBALES ----
-window.addEventListener('error', function(e) {
-  console.error('❌ Error global:', e.error);
-});
