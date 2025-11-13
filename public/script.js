@@ -1,9 +1,5 @@
-// ---- CONFIG ----
 const SOCKET_CONNECT_ORIGIN = window.location.origin;
-const MQTT_TIMEOUT_MS = 20000;
 const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
-
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
 const variables = [
@@ -15,107 +11,91 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-const charts = {};
+let charts = {};
 let liveBuffer = [];
 let allData = [];
-let lastMqttTimestamp = 0;
 
-// ---- CREAR GRÁFICOS ECHARTS ----
-function createCharts() {
+// ---- CREAR GRÁFICOS ----
+function createCharts(){
   variables.forEach(v => {
     const el = document.getElementById(v);
     if(!el) return;
 
-    const chart = echarts.init(el, null, {renderer:'canvas', useDirtyRect:true});
-    charts[v] = chart;
+    charts[v] = echarts.init(el);
 
     const option = {
-      title: { text: v, left: 'center', textStyle:{color:'#00e5ff'} },
-      tooltip: { trigger: 'axis' },
-      xAxis: { type:'time', axisLabel:{color:'#ccc'}, splitLine:{lineStyle:{color:'#1e3a4c'}} },
-      yAxis: { type:'value', min:'dataMin', axisLabel:{color:'#ccc'}, splitLine:{lineStyle:{color:'#1e3a4c'}} },
-      series: [{
+      title:{text:v,left:'center',textStyle:{color:'#00e5ff'}},
+      tooltip:{trigger:'axis'},
+      xAxis:{
+        type:'time',
+        axisLabel:{color:'#ccc'},
+        splitLine:{lineStyle:{color:'#1e3a4c'}}
+      },
+      yAxis:{
+        type:'value',
+        axisLabel:{color:'#ccc'},
+        splitLine:{lineStyle:{color:'#1e3a4c'}}
+      },
+      series:[{
         type:'line',
-        showSymbol:false,
-        areaStyle:{opacity:0.2},
-        data: [],
-        lineStyle:{color: colorMap[v]},
+        data:[],
+        smooth:true,
+        areaStyle:{color:colorMap[v]+'33'},
+        lineStyle:{color:colorMap[v]}
       }],
       dataZoom:[
-        { type:'inside', xAxisIndex:0 },
-        { type:'slider', xAxisIndex:0, bottom: '5%' }
+        {type:'inside',xAxisIndex:0},
+        {type:'slider',xAxisIndex:0,height:20,bottom:10}
       ]
     };
 
-    chart.setOption(option);
+    charts[v].setOption(option);
 
-    // BOTON RESET ZOOM
+    // Botón reset zoom
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick = () => chart.dispatchAction({ type:'dataZoom', start: 0, end: 100 });
+    if(btnReset) btnReset.onclick = () => charts[v].dispatchAction({type:'dataZoom',start:0,end:100});
   });
 }
 
-// ---- FUNCION RENDER ----
+// ---- RENDER CHART ----
 function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
+
   let dataArray = allData.concat(liveBuffer);
   if(!dataArray.length) return;
 
-  // ordenar por fecha ascendente
   dataArray.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
 
-  const labels = dataArray.map(d => new Date(d.fecha));
-  const values = dataArray.map(d => d[v] ?? null);
+  const labels = dataArray.map(d=>new Date(d.fecha).toLocaleString());
+  const values = dataArray.map(d=>d[v]??null);
 
-  // Mostrar últimos 15 por defecto
+  // Mostrar últimos 15
   const total = labels.length;
-  const startIndex = Math.max(0, total - 15);
+  const start = Math.max(0,total-15);
+  const option = {
+    xAxis:{data:labels.slice(start)},
+    series:[{data:values.slice(start)}]
+  };
 
-  chart.setOption({
-    series:[{ data: labels.map((time,i)=>[time, values[i]]) }],
-    dataZoom: [{ startValue: labels[startIndex], endValue: labels[total-1] }]
-  });
+  chart.setOption(option);
 }
 
-// ---- SOCKET ----
-socket.on("connect", () => console.log("🔌 Socket conectado"));
-socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
-
+// ---- SOCKET.IO ----
 socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha ? new Date(data.fecha) : new Date()};
+  const record = {...data, fecha:data.fecha? new Date(data.fecha):new Date()};
   liveBuffer.push(record);
-  if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
-  lastMqttTimestamp = Date.now();
+  if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
 
-  variables.forEach(v => renderChart(v));
+  variables.forEach(v=> renderChart(v));
 
-  if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud,data.longitud);
+  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => renderChart(v));
+  variables.forEach(v=> renderChart(v));
 });
-
-// ---- MONGO ----
-async function loadLatestFromMongo(){
-  try{
-    const res = await fetch('/api/data/latest');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const data = await res.json();
-    return data.map(d => ({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e); return [];}
-}
-
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    allData = await res.json();
-    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
-  }catch(e){console.error(e);}
-}
 
 // ---- MAPA ----
 let map, marker;
@@ -124,40 +104,13 @@ function initMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
   marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
 }
-
 function updateMap(lat,lon){
-  if(!map||!marker||lat===undefined||lon===undefined) return;
+  if(!map||!marker) return;
   marker.setLatLng([lat,lon]);
   map.setView([lat,lon],14);
   marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
 }
 
-// ---- CICLOS ----
-async function refreshDisplay(){
-  const now = Date.now();
-  const diff = now-lastMqttTimestamp;
-
-  for(const v of variables){
-    if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS){
-      renderChart(v);
-    } else {
-      const mongoLatest = await loadLatestFromMongo();
-      if(mongoLatest.length > 0){
-        allData = mongoLatest;
-        renderChart(v);
-      }
-    }
-  }
-}
-
 // ---- INICIO ----
-(async function init(){
-  initMap();
-  createCharts();
-  await loadAllFromMongo();
-  const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=> renderChart(v));
-
-  setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
-})();
+initMap();
+createCharts();

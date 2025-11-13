@@ -3,17 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Panel de Sensores</title>
+  <title>Panel de Sensores — IoT</title>
 
-  <!-- Chart.js + Zoom plugin -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <!-- ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.2/dist/echarts.min.js"></script>
 
   <!-- Leaflet + Fullscreen plugin -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
-  <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
 
   <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
@@ -23,7 +20,6 @@
       --bg:#0b1d2a;
       --card:#102a3c;
       --accent:#00e5ff;
-      --muted:#1e3a4c;
       --text:#eaf6f8;
     }
     html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
@@ -33,7 +29,6 @@
       grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
       gap:16px;
       padding:16px;
-      align-items:start;
     }
     .card {
       background:var(--card);
@@ -45,7 +40,6 @@
       overflow:hidden;
     }
     .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
-    canvas{width:100% !important;height:220px !important; display:block}
     .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
     .btn {
       background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
@@ -55,8 +49,11 @@
     #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
     #map{width:100%;height:420px;border-radius:8px}
     @media (max-width:420px){
-      canvas{height:180px !important}
       #map{height:320px}
+    }
+    .echart-container{
+      width:100%;
+      height:220px;
     }
   </style>
 </head>
@@ -73,7 +70,7 @@
   <div class="grid" id="chartsGrid">
     <div class="card">
       <h4>Humedad</h4>
-      <canvas id="humedad"></canvas>
+      <div id="humedad" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="humedad">Reset Zoom</button>
       </div>
@@ -81,7 +78,7 @@
 
     <div class="card">
       <h4>Temperatura</h4>
-      <canvas id="temperatura"></canvas>
+      <div id="temperatura" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="temperatura">Reset Zoom</button>
       </div>
@@ -89,7 +86,7 @@
 
     <div class="card">
       <h4>Conductividad</h4>
-      <canvas id="conductividad"></canvas>
+      <div id="conductividad" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="conductividad">Reset Zoom</button>
       </div>
@@ -97,7 +94,7 @@
 
     <div class="card">
       <h4>pH</h4>
-      <canvas id="ph"></canvas>
+      <div id="ph" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="ph">Reset Zoom</button>
       </div>
@@ -105,7 +102,7 @@
 
     <div class="card">
       <h4>Nitrógeno</h4>
-      <canvas id="nitrogeno"></canvas>
+      <div id="nitrogeno" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="nitrogeno">Reset Zoom</button>
       </div>
@@ -113,7 +110,7 @@
 
     <div class="card">
       <h4>Fósforo</h4>
-      <canvas id="fosforo"></canvas>
+      <div id="fosforo" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="fosforo">Reset Zoom</button>
       </div>
@@ -121,7 +118,7 @@
 
     <div class="card">
       <h4>Potasio</h4>
-      <canvas id="potasio"></canvas>
+      <div id="potasio" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="potasio">Reset Zoom</button>
       </div>
@@ -129,7 +126,7 @@
 
     <div class="card">
       <h4>Batería (ADC)</h4>
-      <canvas id="bateria"></canvas>
+      <div id="bateria" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="bateria">Reset Zoom</button>
       </div>
@@ -137,22 +134,13 @@
 
     <div class="card">
       <h4>Corriente (raw)</h4>
-      <canvas id="corriente"></canvas>
+      <div id="corriente" class="echart-container"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="corriente">Reset Zoom</button>
       </div>
     </div>
   </div>
 
-  <!-- BOTÓN A HISTÓRICOS -->
-  <div style="text-align:center; margin:16px;">
-    <button onclick="window.open('historicos.html', '_blank')" 
-            style="padding:10px 16px; border:none; border-radius:8px; background:var(--accent); color:#002; cursor:pointer;">
-      Ver Datos Históricos Tabla
-    </button>
-  </div>
-
-  <!-- SCRIPT: lógica (socket, charts, mapa, mongo load) -->
   <script src="script.js"></script>
 </body>
 </html>
