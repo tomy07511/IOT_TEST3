@@ -81,7 +81,6 @@ mqttClient.on("message", async (topic, message) => {
     const data = JSON.parse(message.toString());
     console.log("📥 Mensaje recibido:", data);
 
-    // Crear y guardar el nuevo documento con todos los campos
     const sensor = new Sensor({
       humedad: data.humedad,
       temperatura: data.temperatura,
@@ -101,7 +100,6 @@ mqttClient.on("message", async (topic, message) => {
     await sensor.save();
     console.log("💾 Guardado en MongoDB");
 
-    // Emitir en tiempo real a los clientes conectados
     io.emit("nuevoDato", sensor);
     console.log("📡 Dato emitido en tiempo real");
   } catch (err) {
@@ -144,6 +142,27 @@ app.get("/api/data/all", async (req, res) => {
   } catch (err) {
     console.error("❌ Error obteniendo todos los datos:", err);
     res.status(500).json({ error: "Error obteniendo los datos" });
+  }
+});
+
+// =====================================================
+// 🔹 Nuevo endpoint para cargar datos por bloques
+// =====================================================
+app.get("/api/data/chunk", async (req, res) => {
+  try {
+    const skip = parseInt(req.query.skip) || 0;
+    const limit = parseInt(req.query.limit) || 1000;
+
+    const datos = await Sensor.find({})
+      .sort({ fecha: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    res.json(datos);
+  } catch (err) {
+    console.error("❌ Error en /api/data/chunk:", err);
+    res.status(500).json({ error: "Error cargando chunk" });
   }
 });
 
