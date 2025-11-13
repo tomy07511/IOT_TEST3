@@ -43,16 +43,7 @@ function createCharts() {
         maintainAspectRatio:false,
         interaction:{mode:'nearest',intersect:false},
         animation:{duration:400,easing:'linear'},
-        plugins:{
-          legend:{labels:{color:'#fff'}},
-          zoom:{
-            pan:{enabled:true,mode:'x',modifierKey:'ctrl'},
-            zoom:{
-              drag:{enabled:true,backgroundColor:'rgba(0,229,255,0.25)',borderColor:'#00e5ff',borderWidth:1},
-              mode:'x'
-            }
-          }
-        },
+        plugins:{legend:{labels:{color:'#fff'}}},
         scales:{
           x:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}},
           y:{ticks:{color:'#ccc'}, grid:{color:'#1e3a4c'}}
@@ -61,6 +52,8 @@ function createCharts() {
     });
 
     charts[v].displayMode = 'live';
+    charts[v].viewStart = 0;    // índice del primer punto visible en histórico
+    charts[v].viewCount = 15;   // cantidad de puntos visibles por vez
 
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
@@ -74,14 +67,14 @@ function createCharts() {
       charts[v].displayMode = 'live';
       btnLive.disabled = true;
       btnHist.disabled = false;
-      renderChart(v, true);
+      renderChart(v);
     };
 
     const btnHist = document.createElement('button');
     btnHist.textContent = 'Histórico';
     btnHist.className='btn';
     btnHist.style.marginLeft='6px';
-    btnHist.disabled = false;
+    btnHist.disabled=false;
     btnHist.onclick = () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
@@ -89,32 +82,66 @@ function createCharts() {
       renderChart(v);
     };
 
+    const btnLeft = document.createElement('button');
+    btnLeft.textContent = '◀';
+    btnLeft.className='btn';
+    btnLeft.style.marginLeft='6px';
+    btnLeft.onclick = () => shiftChart(v, -1);
+
+    const btnRight = document.createElement('button');
+    btnRight.textContent = '▶';
+    btnRight.className='btn';
+    btnRight.style.marginLeft='6px';
+    btnRight.onclick = () => shiftChart(v, 1);
+
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
     actionsDiv.appendChild(btnHist);
+    actionsDiv.appendChild(btnLeft);
+    actionsDiv.appendChild(btnRight);
   });
 }
 
+// ---- FUNCION PARA MOVER LA VISTA ----
+function shiftChart(v, direction){
+  const chart = charts[v];
+  if(!chart || chart.displayMode!=='historical') return;
+
+  const total = chart._allLabels?.length || 0;
+  if(total <= chart.viewCount) return;
+
+  chart.viewStart += direction * chart.viewCount;
+  if(chart.viewStart < 0) chart.viewStart = 0;
+  if(chart.viewStart > total - chart.viewCount) chart.viewStart = total - chart.viewCount;
+
+  chart.data.labels = chart._allLabels.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+  chart.data.datasets[0].data = chart._allData.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+  chart.update();
+}
+
 // ---- RENDER ----
-function renderChart(v, autoScroll=false){
+function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
-
   const dataArray = chart.displayMode==='live' ? liveBuffer : allData;
-  if(!Array.isArray(dataArray)||!dataArray.length) return;
+  if(!Array.isArray(dataArray) || !dataArray.length) return;
 
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
 
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = dataset;
-  chart.update();
+  chart._allLabels = labels;
+  chart._allData = dataset;
 
-  // autoScroll para live
-  if(autoScroll && chart.displayMode==='live'){
-    const wrapper = chart.canvas.parentElement;
-    if(wrapper) wrapper.scrollLeft = wrapper.scrollWidth;
+  if(chart.displayMode==='historical'){
+    chart.viewStart = labels.length > chart.viewCount ? labels.length - chart.viewCount : 0;
+    chart.data.labels = labels.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+    chart.data.datasets[0].data = dataset.slice(chart.viewStart, chart.viewStart + chart.viewCount);
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = dataset;
   }
+
+  chart.update();
 }
 
 // ---- SOCKET ----
@@ -122,13 +149,13 @@ socket.on("connect", () => console.log("🔌 Socket conectado"));
 socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
 
 socket.on("nuevoDato", (data) => {
-  const record = {...data, fecha: data.fecha ? new Date(data.fecha) : new Date()};
+  const record = {...data, fecha: data.fecha? new Date(data.fecha): new Date()};
   liveBuffer.push(record);
   if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v => {
-    if(charts[v].displayMode==='live') renderChart(v, true);
+  variables.forEach(v=>{
+    if(charts[v].displayMode==='live') renderChart(v);
   });
 
   if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
@@ -136,7 +163,7 @@ socket.on("nuevoDato", (data) => {
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => {
+  variables.forEach(v=>{
     if(charts[v].displayMode==='historical') renderChart(v);
   });
 });
@@ -178,17 +205,17 @@ function updateMap(lat,lon){
 // ---- CICLOS ----
 async function refreshDisplay(){
   const now = Date.now();
-  const diff = now - lastMqttTimestamp;
+  const diff = now-lastMqttTimestamp;
 
   for(const v of variables){
     if(charts[v].displayMode==='live'){
       if(lastMqttTimestamp!==0 && diff<=MQTT_TIMEOUT_MS && liveBuffer.length>0){
-        renderChart(v, true);
+        renderChart(v);
       } else {
         const mongoLatest = await loadLatestFromMongo();
         if(mongoLatest.length>0){
           allData = mongoLatest;
-          renderChart(v, true);
+          renderChart(v);
         }
       }
     }
@@ -201,7 +228,7 @@ async function refreshDisplay(){
   createCharts();
   await loadAllFromMongo();
   const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v, true);});
+  if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
 
   setInterval(refreshDisplay,5000);
   setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
