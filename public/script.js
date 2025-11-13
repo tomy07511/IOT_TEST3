@@ -12,7 +12,11 @@ const colorMap = {
 const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
-variables.forEach(v=>dataBuffers[v] = {x:[],y:[]});
+const zoomStates = {};
+variables.forEach(v=>{
+  dataBuffers[v] = {x:[],y:[]};
+  zoomStates[v] = { x: 50, y: 50 }; // 50% al inicio
+});
 
 // ---- INIT MAP ----
 let map, marker;
@@ -22,22 +26,90 @@ function initMap(){
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES SIMPLES ----
+// ---- CONTROLES CON SLIDERS ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
     display: flex;
-    gap: 10px;
+    gap: 15px;
     margin-bottom: 10px;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
+    padding: 8px;
+    background: #102a3c;
+    border-radius: 6px;
+    flex-wrap: wrap;
   `;
   
-  // Botón "Actuales"
+  // Título
+  const title = document.createElement('span');
+  title.textContent = varName;
+  title.style.cssText = `
+    color: #00e5ff;
+    font-weight: 600;
+    min-width: 100px;
+    text-transform: capitalize;
+  `;
+  
+  // Controles de Zoom X
+  const zoomXDiv = document.createElement('div');
+  zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
+  
+  const zoomXLabel = document.createElement('span');
+  zoomXLabel.textContent = 'Zoom X:';
+  zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomXSlider = document.createElement('input');
+  zoomXSlider.type = 'range';
+  zoomXSlider.min = '10';
+  zoomXSlider.max = '100';
+  zoomXSlider.value = '50';
+  zoomXSlider.style.cssText = `
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #0f3a45;
+    outline: none;
+  `;
+  
+  const zoomXValue = document.createElement('span');
+  zoomXValue.textContent = '50%';
+  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  
+  // Controles de Zoom Y
+  const zoomYDiv = document.createElement('div');
+  zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
+  
+  const zoomYLabel = document.createElement('span');
+  zoomYLabel.textContent = 'Zoom Y:';
+  zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomYSlider = document.createElement('input');
+  zoomYSlider.type = 'range';
+  zoomYSlider.min = '10';
+  zoomYSlider.max = '100';
+  zoomYSlider.value = '50';
+  zoomYSlider.style.cssText = `
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #0f3a45;
+    outline: none;
+  `;
+  
+  const zoomYValue = document.createElement('span');
+  zoomYValue.textContent = '50%';
+  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  
+  // Botones
+  const buttonsDiv = document.createElement('div');
+  buttonsDiv.style.cssText = `display: flex; gap: 5px;`;
+  
   const btnActuales = document.createElement('button');
-  btnActuales.innerHTML = '🕒 Últimos';
+  btnActuales.innerHTML = '🕒';
+  btnActuales.title = 'Últimos datos';
   btnActuales.style.cssText = `
-    padding: 6px 12px;
+    padding: 4px 8px;
     background: #7e57c2;
     color: white;
     border: none;
@@ -46,11 +118,11 @@ function createChartControls(varName, container) {
     font-size: 12px;
   `;
   
-  // Botón "Reset"
   const btnReset = document.createElement('button');
-  btnReset.innerHTML = '🔁 Reset';
+  btnReset.innerHTML = '🔁';
+  btnReset.title = 'Resetear zoom';
   btnReset.style.cssText = `
-    padding: 6px 12px;
+    padding: 4px 8px;
     background: #00e5ff;
     color: #002;
     border: none;
@@ -59,19 +131,93 @@ function createChartControls(varName, container) {
     font-size: 12px;
   `;
   
+  // Event listeners para sliders
+  zoomXSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    zoomXValue.textContent = value + '%';
+    zoomStates[varName].x = parseInt(value);
+    applyZoom(varName);
+  });
+  
+  zoomYSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    zoomYValue.textContent = value + '%';
+    zoomStates[varName].y = parseInt(value);
+    applyZoom(varName);
+  });
+  
+  // Event listeners para botones
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
-  controlsDiv.appendChild(btnActuales);
-  controlsDiv.appendChild(btnReset);
+  // Ensamblar controles
+  zoomXDiv.appendChild(zoomXLabel);
+  zoomXDiv.appendChild(zoomXSlider);
+  zoomXDiv.appendChild(zoomXValue);
+  
+  zoomYDiv.appendChild(zoomYLabel);
+  zoomYDiv.appendChild(zoomYSlider);
+  zoomYDiv.appendChild(zoomYValue);
+  
+  buttonsDiv.appendChild(btnActuales);
+  buttonsDiv.appendChild(btnReset);
+  
+  controlsDiv.appendChild(title);
+  controlsDiv.appendChild(zoomXDiv);
+  controlsDiv.appendChild(zoomYDiv);
+  controlsDiv.appendChild(buttonsDiv);
   
   container.parentNode.insertBefore(controlsDiv, container);
+}
+
+// ---- APLICAR ZOOM CON SLIDERS ----
+function applyZoom(varName) {
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  const zoom = zoomStates[varName];
+  
+  // Obtener rango completo de datos
+  const allDates = buf.x.map(x => new Date(x).getTime());
+  const allValues = buf.y;
+  
+  const minTime = Math.min(...allDates);
+  const maxTime = Math.max(...allDates);
+  const minValue = Math.min(...allValues);
+  const maxValue = Math.max(...allValues);
+  
+  const fullTimeRange = maxTime - minTime;
+  const fullValueRange = maxValue - minValue;
+  
+  // Calcular rangos visibles basados en sliders (50% = rango completo)
+  const visibleTimeRange = fullTimeRange * (100 / zoom.x);
+  const visibleValueRange = fullValueRange * (100 / zoom.y);
+  
+  const centerTime = (minTime + maxTime) / 2;
+  const centerValue = (minValue + maxValue) / 2;
+  
+  const visibleMinTime = centerTime - visibleTimeRange / 2;
+  const visibleMaxTime = centerTime + visibleTimeRange / 2;
+  const visibleMinValue = centerValue - visibleValueRange / 2;
+  const visibleMaxValue = centerValue + visibleValueRange / 2;
+  
+  // Aplicar zoom
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.range': [new Date(visibleMinTime), new Date(visibleMaxTime)],
+    'yaxis.range': [visibleMinValue, visibleMaxValue],
+    'xaxis.autorange': false,
+    'yaxis.autorange': false
+  });
 }
 
 // ---- ZOOM A ÚLTIMOS DATOS ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
+  
+  // Cambiar sliders para zoom cercano
+  zoomStates[varName].x = 20; // Zoom más cercano en X
+  zoomStates[varName].y = 80; // Poco zoom en Y
   
   const last20 = buf.x.slice(-20).map(x => new Date(x));
   const lastValues = buf.y.slice(-20);
@@ -94,6 +240,10 @@ function zoomToLatest(varName) {
 
 // ---- RESET ZOOM ----
 function resetZoom(varName) {
+  // Volver a 50% en ambos sliders
+  zoomStates[varName].x = 50;
+  zoomStates[varName].y = 50;
+  
   Plotly.relayout(charts[varName].div, {
     'xaxis.autorange': true,
     'yaxis.autorange': true
@@ -135,7 +285,7 @@ function createCharts(){
       container.id = divId;
       container.style.width = '100%';
       container.style.height = '350px';
-      container.style.marginBottom = '20px';
+      container.style.marginBottom = '10px';
       document.querySelector('#graficaPlotly').appendChild(container);
     }
 
@@ -144,7 +294,7 @@ function createCharts(){
     charts[v] = {
       div: container,
       layout: {
-        title: { text: v, font: { color: '#00e5ff', size: 14 } },
+        title: { text: '', font: { color: '#00e5ff', size: 14 } },
         plot_bgcolor: '#071923',
         paper_bgcolor: '#071923',
         font: { color: '#eaf6f8' },
@@ -157,7 +307,7 @@ function createCharts(){
           gridcolor: '#0f3a45',
           autorange: true
         },
-        margin: { l: 60, r: 30, t: 40, b: 60 },
+        margin: { l: 60, r: 30, t: 10, b: 60 },
         showlegend: false
       },
       config: {
@@ -212,6 +362,15 @@ async function loadAllFromMongo(){
     variables.forEach(v=>{
       updateChart(v);
     });
+
+    // Aplicar zoom inicial (50%)
+    setTimeout(() => {
+      variables.forEach(v => {
+        if(dataBuffers[v].x.length > 0) {
+          applyZoom(v);
+        }
+      });
+    }, 1000);
 
   }catch(e){
     console.error('Error cargando histórico',e);
