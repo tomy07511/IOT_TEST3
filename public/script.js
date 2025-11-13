@@ -14,10 +14,6 @@ const dataBuffers = {};
 const charts = {};
 variables.forEach(v=>dataBuffers[v] = {x:[],y:[]});
 
-// Variables para controlar el auto-ajuste
-let isZoomActive = false;
-let currentXRange = null;
-
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
@@ -26,23 +22,39 @@ function initMap(){
   marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CREAR BOTONES INDIVIDUALES PARA CADA GRÁFICA ----
+// ---- MEJORAR DISEÑO DE CONTROLES ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
     display: flex;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 12px;
+    margin-bottom: 15px;
     justify-content: flex-end;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(16, 42, 60, 0.8);
+    border-radius: 8px;
+    border: 1px solid #0f3a45;
   `;
   
-  // Botón "Actuales" (últimos 15 datos)
+  // Título de la variable
+  const title = document.createElement('span');
+  title.textContent = varName;
+  title.style.cssText = `
+    color: #00e5ff;
+    font-weight: 600;
+    font-size: 14px;
+    margin-right: auto;
+    text-transform: capitalize;
+  `;
+  
+  // Botón "Actuales"
   const btnActuales = document.createElement('button');
-  btnActuales.innerHTML = '🕒 Actuales';
+  btnActuales.innerHTML = '🕒 Últimos 15';
   btnActuales.title = 'Zoom a los últimos 15 datos';
   btnActuales.style.cssText = `
-    padding: 6px 12px;
-    background: #7e57c2;
+    padding: 8px 16px;
+    background: linear(135deg, #7e57c2, #5e35b1);
     color: white;
     border: none;
     border-radius: 6px;
@@ -50,15 +62,16 @@ function createChartControls(varName, container) {
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(126, 87, 194, 0.3);
   `;
   
   // Botón "Reset Zoom"
   const btnReset = document.createElement('button');
-  btnReset.innerHTML = '🔁 Reset';
-  btnReset.title = 'Resetear zoom';
+  btnReset.innerHTML = '🔁 Reset Zoom';
+  btnReset.title = 'Resetear zoom a vista completa';
   btnReset.style.cssText = `
-    padding: 6px 12px;
-    background: #00e5ff;
+    padding: 8px 16px;
+    background: linear(135deg, #00e5ff, #00bcd4);
     color: #002;
     border: none;
     border-radius: 6px;
@@ -66,18 +79,23 @@ function createChartControls(varName, container) {
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 229, 255, 0.3);
   `;
   
-  // Efectos hover
+  // Efectos hover mejorados
   [btnActuales, btnReset].forEach(btn => {
     btn.addEventListener('mouseenter', () => {
       btn.style.transform = 'translateY(-2px)';
-      btn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+      btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
     });
     
     btn.addEventListener('mouseleave', () => {
       btn.style.transform = 'translateY(0)';
-      btn.style.boxShadow = 'none';
+      btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+    });
+    
+    btn.addEventListener('mousedown', () => {
+      btn.style.transform = 'translateY(0)';
     });
   });
   
@@ -85,6 +103,7 @@ function createChartControls(varName, container) {
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
+  controlsDiv.appendChild(title);
   controlsDiv.appendChild(btnActuales);
   controlsDiv.appendChild(btnReset);
   
@@ -92,29 +111,70 @@ function createChartControls(varName, container) {
   container.parentNode.insertBefore(controlsDiv, container);
 }
 
+// ---- FUNCIÓN PARA DIVIDIR DATOS EN SEGMENTOS (ELIMINA LÍNEAS ENTRE HUECOS) ----
+function createDataSegments(xArray, yArray) {
+  if (xArray.length === 0) return [];
+  
+  const segments = [];
+  let currentSegment = { x: [], y: [] };
+  
+  // Ordenar por fecha por si acaso
+  const combined = xArray.map((x, i) => ({ x: new Date(x), y: yArray[i] }))
+    .sort((a, b) => a.x - b.x);
+  
+  for (let i = 0; i < combined.length; i++) {
+    const currentPoint = combined[i];
+    
+    if (currentSegment.x.length === 0) {
+      // Primer punto del segmento
+      currentSegment.x.push(currentPoint.x);
+      currentSegment.y.push(currentPoint.y);
+    } else {
+      const lastPoint = combined[i - 1];
+      const timeDiff = currentPoint.x - lastPoint.x;
+      const maxGap = 2 * 60 * 60 * 1000; // 2 horas en milisegundos
+      
+      if (timeDiff <= maxGap) {
+        // Mismo segmento (menos de 2 horas de diferencia)
+        currentSegment.x.push(currentPoint.x);
+        currentSegment.y.push(currentPoint.y);
+      } else {
+        // Hueco detectado (> 2 horas), crear nuevo segmento
+        segments.push(currentSegment);
+        currentSegment = { x: [currentPoint.x], y: [currentPoint.y] };
+      }
+    }
+  }
+  
+  // Agregar el último segmento
+  if (currentSegment.x.length > 0) {
+    segments.push(currentSegment);
+  }
+  
+  return segments;
+}
+
 // ---- ZOOM A ÚLTIMOS 15 DATOS ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
-  // Ordenar por fecha (por si acaso)
-  const combined = buf.x.map((x, i) => ({x, y: buf.y[i]}))
-    .sort((a, b) => new Date(a.x) - new Date(b.x));
+  // Ordenar por fecha y tomar últimos 15
+  const combined = buf.x.map((x, i) => ({x: new Date(x), y: buf.y[i]}))
+    .sort((a, b) => a.x - b.x)
+    .slice(-15);
   
-  // Tomar los últimos 15 puntos
-  const latestData = combined.slice(-15);
-  
-  if (latestData.length > 0) {
-    const xValues = latestData.map(d => d.x);
-    const yValues = latestData.map(d => d.y);
+  if (combined.length > 0) {
+    const xValues = combined.map(d => d.x);
+    const yValues = combined.map(d => d.y);
     
-    const minX = new Date(Math.min(...xValues.map(x => new Date(x).getTime())));
-    const maxX = new Date(Math.max(...xValues.map(x => new Date(x).getTime())));
+    const minX = new Date(Math.min(...xValues.map(x => x.getTime())));
+    const maxX = new Date(Math.max(...xValues.map(x => x.getTime())));
     const minY = Math.min(...yValues);
     const maxY = Math.max(...yValues);
-    const paddingY = (maxY - minY) * 0.1;
+    const paddingY = (maxY - minY) * 0.15 || 1; // 15% padding
     
-    // Aplicar zoom
+    // Aplicar zoom con animación suave
     Plotly.relayout(charts[varName].div, {
       'xaxis.range': [minX, maxX],
       'yaxis.range': [minY - paddingY, maxY + paddingY],
@@ -122,10 +182,7 @@ function zoomToLatest(varName) {
       'yaxis.autorange': false
     });
     
-    isZoomActive = true;
-    currentXRange = [minX, maxX];
-    
-    console.log(`🔍 Zoom a últimos 15 datos de ${varName}`);
+    console.log(`🔍 Zoom a últimos ${combined.length} datos de ${varName}`);
   }
 }
 
@@ -136,12 +193,10 @@ function resetZoom(varName) {
     'yaxis.autorange': true
   });
   
-  isZoomActive = false;
-  currentXRange = null;
   console.log(`🔄 Zoom resetado en ${varName}`);
 }
 
-// ---- CREAR GRAFICAS ----
+// ---- CREAR GRAFICAS CON SEGMENTOS ----
 function createCharts(){
   variables.forEach(v=>{
     const divId = 'grafica_'+v;
@@ -150,115 +205,107 @@ function createCharts(){
       container = document.createElement('div');
       container.id = divId;
       container.style.width = '100%';
-      container.style.height = '400px';
-      container.style.marginTop = '12px';
+      container.style.height = '420px';
+      container.style.marginTop = '8px';
+      container.style.borderRadius = '8px';
+      container.style.overflow = 'hidden';
       document.querySelector('#graficaPlotly').appendChild(container);
     }
 
-    // Crear controles para esta gráfica
+    // Crear controles mejorados para esta gráfica
     createChartControls(v, container);
 
+    // Inicializar con array vacío de trazas (se llenará con segmentos)
     charts[v] = {
       div: container,
-      trace: {
-        x: [],
-        y: [],
-        type: 'scatter', // ← scatter normal para mayor estabilidad
-        mode: 'lines',
-        name: v,
-        line: {color: colorMap[v], width: 2},
-        hovertemplate: '%{x}<br>'+v+': %{y}<extra></extra>',
-        connectgaps: false
-      },
+      traces: [], // Ahora será un array de trazas (segmentos)
       layout: {
-        title: {text:v, font:{color:'#00e5ff'}},
+        title: {text: '', font: {color: '#00e5ff', size: 16}}, // Quitamos título ya que está en controles
         plot_bgcolor:'#071923',
         paper_bgcolor:'#071923',
-        font:{color:'#eaf6f8'},
+        font:{color:'#eaf6f8', family: 'Segoe UI, system-ui, Arial'},
         xaxis: {
-          rangeslider:{visible:true,bgcolor:'#021014'},
+          rangeslider:{visible:true, bgcolor:'#021014', bordercolor:'#0f3a45'},
           rangeselector:{
             buttons:[
-              {step:'hour',stepmode:'backward',count:1,label:'1h'},
-              {step:'hour',stepmode:'backward',count:6,label:'6h'},
-              {step:'day',stepmode:'backward',count:1,label:'1d'},
-              {step:'all',label:'Todo'}
+              {step:'hour', stepmode:'backward', count:1, label:'1h'},
+              {step:'hour', stepmode:'backward', count:6, label:'6h'},
+              {step:'day', stepmode:'backward', count:1, label:'1d'},
+              {step:'all', label:'Todo'}
             ],
             bgcolor:'#04161a',
-            activecolor:'#00e5ff'
+            activecolor:'#00e5ff',
+            font: {color: '#eaf6f8'}
           },
           type:'date',
           gridcolor:'#0f3a45',
-          tickcolor:'#0f3a45'
+          zerolinecolor: '#0f3a45',
+          tickcolor:'#0f3a45',
+          tickfont: {color: '#a0d2e0'}
         },
         yaxis:{
           gridcolor:'#0f3a45',
+          zerolinecolor: '#0f3a45',
+          tickcolor:'#0f3a45',
+          tickfont: {color: '#a0d2e0'},
           autorange: true,
           fixedrange: false
         },
-        legend:{orientation:'h',y:-0.25},
-        margin: {l:60, r:30, t:50, b:80}
+        legend:{orientation:'h', y:-0.2, font: {color: '#eaf6f8'}},
+        margin: {l:70, r:40, t:20, b:100},
+        hovermode: 'closest',
+        hoverlabel: {
+          bgcolor: '#102a3c',
+          bordercolor: '#00e5ff',
+          font: {color: '#eaf6f8'}
+        }
       },
       config:{
-        responsive:true,
+        responsive: true,
         displayModeBar: true,
         modeBarButtonsToRemove: ['pan2d','select2d','lasso2d'],
-        displaylogo: false
+        displaylogo: false,
+        scrollZoom: true
       }
     };
 
-    // Crear gráfica con manejo de errores
+    // Crear gráfica inicial vacía
     try {
-      Plotly.newPlot(container, [charts[v].trace], charts[v].layout, charts[v].config);
+      Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
     } catch (error) {
       console.error(`❌ Error creando gráfica ${v}:`, error);
     }
     
-    // EVENT LISTENER PARA ZOOM
+    // Event listener para zoom
     container.on('plotly_relayout', function(eventdata) {
-      // Detectar cuando se hace zoom
       if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
-        isZoomActive = true;
-        currentXRange = [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']];
-        autoAdjustYAxis(v, currentXRange);
-      }
-      // Detectar cuando se vuelve al rango completo
-      else if (eventdata['xaxis.autorange'] || eventdata['autosize']) {
-        isZoomActive = false;
-        currentXRange = null;
+        autoAdjustYAxis(v, [eventdata['xaxis.range[0]'], eventdata['xaxis.range[1]']]);
+      } else if (eventdata['xaxis.autorange'] || eventdata['autosize']) {
         Plotly.relayout(container, {'yaxis.autorange': true});
       }
     });
   });
 }
 
-// ---- FUNCIÓN PARA AUTO-AJUSTAR EJE Y ----
-function autoAdjustYAxis(varName, xRange) {
+// ---- ACTUALIZAR GRÁFICA CON SEGMENTOS ----
+function updateChart(varName) {
   const buf = dataBuffers[varName];
-  const startTime = new Date(xRange[0]).getTime();
-  const endTime = new Date(xRange[1]).getTime();
+  const segments = createDataSegments(buf.x, buf.y);
   
-  let minY = Infinity;
-  let maxY = -Infinity;
-  let foundData = false;
+  // Crear trazas para cada segmento
+  const traces = segments.map(segment => ({
+    x: segment.x,
+    y: segment.y,
+    type: 'scatter',
+    mode: 'lines',
+    line: {color: colorMap[varName], width: 2.5, shape: 'spline'},
+    name: varName,
+    hovertemplate: `%{x|%d/%m %H:%M}<br>${varName}: %{y:.2f}<extra></extra>`,
+    showlegend: segments.length > 1 // Solo mostrar leyenda si hay múltiples segmentos
+  }));
   
-  for (let i = 0; i < buf.x.length; i++) {
-    const time = new Date(buf.x[i]).getTime();
-    if (time >= startTime && time <= endTime) {
-      const value = buf.y[i];
-      if (value < minY) minY = value;
-      if (value > maxY) maxY = value;
-      foundData = true;
-    }
-  }
-  
-  if (foundData) {
-    const padding = (maxY - minY) * 0.1;
-    Plotly.relayout(charts[varName].div, {
-      'yaxis.range': [minY - padding, maxY + padding],
-      'yaxis.autorange': false
-    });
-  }
+  // Actualizar la gráfica
+  Plotly.react(charts[varName].div, traces, charts[varName].layout, charts[varName].config);
 }
 
 // ---- ACTUALIZAR BUFFER Y PLOT ----
@@ -272,19 +319,8 @@ function pushPoint(varName, fecha, value){
     buf.y.shift();
   }
   
-  Plotly.react(charts[varName].div, [{
-    x: buf.x,
-    y: buf.y,
-    type: 'scatter',
-    mode: 'lines',
-    line: {color: colorMap[varName], width: 2},
-    name: varName,
-    connectgaps: false
-  }], charts[varName].layout, charts[varName].config);
-  
-  if (isZoomActive && currentXRange) {
-    autoAdjustYAxis(varName, currentXRange);
-  }
+  // Actualizar gráfica con segmentos
+  updateChart(varName);
 }
 
 // ---- CARGAR HISTORICO ----
@@ -299,13 +335,15 @@ async function loadAllFromMongo(){
       return;
     }
     
-    all.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
-
+    console.log('📥 Cargando históricos:', all.length);
+    
+    // Limpiar buffers
     variables.forEach(v => {
       dataBuffers[v].x = [];
       dataBuffers[v].y = [];
     });
 
+    // Cargar datos
     all.forEach(rec=>{
       const fecha = new Date(rec.fecha);
       variables.forEach(v=>{
@@ -316,19 +354,12 @@ async function loadAllFromMongo(){
       });
     });
 
+    // Render inicial con segmentos
     variables.forEach(v=>{
-      Plotly.react(charts[v].div, [{
-        x: dataBuffers[v].x,
-        y: dataBuffers[v].y,
-        type: 'scatter',
-        mode: 'lines',
-        line: {color: colorMap[v], width: 2},
-        name: v,
-        connectgaps: false
-      }], charts[v].layout, charts[v].config);
+      updateChart(v);
     });
 
-    console.log('✅ Históricos cargados:', all.length);
+    console.log('✅ Históricos cargados y segmentados');
   }catch(e){
     console.error('❌ Error cargando histórico',e);
   }
@@ -344,7 +375,7 @@ socket.on('nuevoDato', data=>{
   if(data.latitud!==undefined && data.longitud!==undefined){
     marker.setLatLng([data.latitud,data.longitud]);
     map.setView([data.latitud,data.longitud],14);
-    marker.setPopupContent(`📍 Lat:${data.latitud.toFixed(5)}<br>Lon:${data.longitud.toFixed(5)}`).openPopup();
+    marker.setPopupContent(`📍 Lat:${data.latitud.toFixed(5)}<br>Lon:${data.longitud.toFixed(5)}<br>${fecha.toLocaleString()}`).openPopup();
   }
 
   variables.forEach(v=>{
