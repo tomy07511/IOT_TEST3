@@ -61,8 +61,8 @@ function createCharts() {
     });
 
     charts[v].displayMode = 'live';
-    charts[v].scrollIndex = 0; // índice para flechas izquierda/derecha
-    charts[v].visiblePoints = 15; // cuántos puntos se ven en la ventana histórica
+    charts[v].scrollIndex = 0; // índice para flechas
+    charts[v].zoomed = false;
 
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
@@ -78,6 +78,7 @@ function createCharts() {
       btnLive.disabled = true;
       btnHist.disabled = false;
       charts[v].resetZoom();
+      charts[v].zoomed = false;
       renderChart(v, true);
     };
 
@@ -90,7 +91,6 @@ function createCharts() {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
-      charts[v].resetZoom();
       charts[v].scrollIndex = 0;
       renderChart(v);
     };
@@ -102,7 +102,7 @@ function createCharts() {
     btnLeft.style.marginLeft = '6px';
     btnLeft.onclick = () => {
       const chart = charts[v];
-      if(chart.displayMode!=='historical') return;
+      if(chart.displayMode!=='historical' || !chart.zoomed) return;
       chart.scrollIndex = Math.max(0, chart.scrollIndex - 1);
       renderChart(v);
     };
@@ -113,7 +113,7 @@ function createCharts() {
     btnRight.style.marginLeft = '6px';
     btnRight.onclick = () => {
       const chart = charts[v];
-      if(chart.displayMode!=='historical') return;
+      if(chart.displayMode!=='historical' || !chart.zoomed) return;
       chart.scrollIndex = Math.min(chart._allLabels.length - chart.visiblePoints, chart.scrollIndex + 1);
       renderChart(v);
     };
@@ -139,7 +139,8 @@ function renderChart(v, autoScroll=false){
   chart._allLabels = labels;
   chart._allData = dataset;
 
-  if(chart.displayMode==='historical'){
+  // ventana visible
+  if(chart.displayMode==='historical' && chart.zoomed){
     const start = chart.scrollIndex;
     const end = Math.min(start + chart.visiblePoints, labels.length);
     chart.data.labels = labels.slice(start, end);
