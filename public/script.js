@@ -1,30 +1,25 @@
-// ---- CONFIG ----
+// -------------------------
+// 🔹 script.js para ECharts
+// -------------------------
+
 import * as echarts from 'echarts/core';
 import {
   TitleComponent,
   TooltipComponent,
   GridComponent,
-  DataZoomComponent
+  DataZoomComponent,
+  LegendComponent
 } from 'echarts/components';
 import { LineChart } from 'echarts/charts';
-import { UniversalTransition, AxisBreak } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 
-echarts.use([
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  DataZoomComponent,
-  LineChart,
-  CanvasRenderer,
-  UniversalTransition,
-  AxisBreak
-]);
+echarts.use([TitleComponent, TooltipComponent, GridComponent, DataZoomComponent, LineChart, CanvasRenderer, LegendComponent]);
 
+// -------------------------
+// 🔹 Variables y configuración
+// -------------------------
 const SOCKET_CONNECT_ORIGIN = window.location.origin;
-const MQTT_TIMEOUT_MS = 20000;
 const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
 
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
@@ -42,91 +37,74 @@ let liveBuffer = [];
 let allData = [];
 let lastMqttTimestamp = 0;
 
-// ---- CREAR TIME LINE ----
-function createTimeline(v){
-  const container = document.createElement('div');
-  container.style.display = 'flex';
-  container.style.alignItems = 'center';
-  container.style.marginTop = '6px';
-  container.style.gap = '6px';
-
-  const labelStart = document.createElement('label');
-  labelStart.textContent = 'Desde:';
-  const inputStart = document.createElement('input');
-  inputStart.type = 'date';
-  
-  const labelEnd = document.createElement('label');
-  labelEnd.textContent = 'Hasta:';
-  const inputEnd = document.createElement('input');
-  inputEnd.type = 'date';
-
-  container.appendChild(labelStart);
-  container.appendChild(inputStart);
-  container.appendChild(labelEnd);
-  container.appendChild(inputEnd);
-
-  function updateChartRange(){
-    const chart = charts[v];
-    if(!chart._allLabels) return;
-
-    let startDate = inputStart.value ? new Date(inputStart.value) : null;
-    let endDate = inputEnd.value ? new Date(inputEnd.value) : null;
-
-    let filteredData = chart._allData.filter((d,i)=>{
-      const lblDate = new Date(chart._allLabels[i]);
-      return (!startDate || lblDate >= startDate) && (!endDate || lblDate <= endDate);
-    });
-    let filteredLabels = chart._allLabels.filter((d,i)=>{
-      const lblDate = new Date(d);
-      return (!startDate || lblDate >= startDate) && (!endDate || lblDate <= endDate);
-    });
-
-    chart.setOption({
-      xAxis: [{ data: filteredLabels }],
-      series: [{ data: filteredData }]
-    });
-  }
-
-  inputStart.onchange = updateChartRange;
-  inputEnd.onchange = updateChartRange;
-
-  return container;
-}
-
-// ---- CREAR GRÁFICOS ----
+// -------------------------
+// 🔹 Crear gráfico ECharts
+// -------------------------
 function createCharts() {
   variables.forEach(v => {
     const el = document.getElementById(v);
-    if(!el) return;
+    if (!el) return;
 
     charts[v] = echarts.init(el);
 
     const option = {
-      title: { text: v.charAt(0).toUpperCase() + v.slice(1), left: 'center', textStyle: { color: colorMap[v] } },
+      title: { text: v.charAt(0).toUpperCase() + v.slice(1), left: 'center', textStyle: { color: '#00e5ff' } },
       tooltip: { trigger: 'axis' },
-      xAxis: [{ type: 'time', axisLabel: { color:'#ccc' }, splitLine:{show:false}, breaks:[] }],
-      yAxis: { type: 'value', min: 'dataMin', axisLabel:{color:'#ccc'}, splitLine:{color:'#1e3a4c'} },
-      dataZoom: [
-        { type:'inside', minValueSpan: 3600*1000 },
-        { type:'slider', top:'90%', minValueSpan: 3600*1000 }
-      ],
-      series: [{ type:'line', smooth:true, symbolSize:0, areaStyle:{color: colorMap[v]+'33'}, lineStyle:{color: colorMap[v]}, data:[] }]
+      xAxis: { type: 'time', axisLabel: { color: '#ccc' }, splitLine: { show: false } },
+      yAxis: { type: 'value', axisLabel: { color: '#ccc' }, min: 'dataMin' },
+      series: [{ type: 'line', data: [], smooth: true, areaStyle: {}, lineStyle: { color: colorMap[v] }, showSymbol: false }],
+      dataZoom: [{ type: 'inside' }, { type: 'slider' }]
     };
 
     charts[v].setOption(option);
-    charts[v].visiblePoints = 15;
 
-    // BOTON RESET ZOOM
+    // Botón Reset Zoom
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
-    if(btnReset) btnReset.onclick = () => charts[v].dispatchAction({ type: 'dataZoom', start:0, end:100 });
+    if(btnReset){
+      btnReset.onclick = () => charts[v].dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+    }
 
-    // CREAR TIME LINE
-    const timeline = createTimeline(v);
-    btnReset.parentElement.appendChild(timeline);
+    // Timeline: filtros por fecha
+    const timelineContainer = document.createElement('div');
+    timelineContainer.style.display = 'flex';
+    timelineContainer.style.gap = '6px';
+    timelineContainer.style.marginTop = '6px';
+
+    const startLabel = document.createElement('label'); startLabel.textContent = 'Desde:'; 
+    const startInput = document.createElement('input'); startInput.type='date';
+    const endLabel = document.createElement('label'); endLabel.textContent = 'Hasta:';
+    const endInput = document.createElement('input'); endInput.type='date';
+
+    timelineContainer.appendChild(startLabel);
+    timelineContainer.appendChild(startInput);
+    timelineContainer.appendChild(endLabel);
+    timelineContainer.appendChild(endInput);
+    btnReset.parentElement.appendChild(timelineContainer);
+
+    function updateChartRange(){
+      const chart = charts[v];
+      if(!chart._allLabels) return;
+
+      let startDate = startInput.value ? new Date(startInput.value) : null;
+      let endDate = endInput.value ? new Date(endInput.value) : null;
+
+      const filteredData = chart._allLabels.map((lbl, idx) => ({ lbl, val: chart._allData[idx] }))
+        .filter(d => (!startDate || new Date(d.lbl) >= startDate) && (!endDate || new Date(d.lbl) <= endDate));
+
+      chart.setOption({
+        xAxis: { data: filteredData.map(d=>d.lbl) },
+        series: [{ data: filteredData.map(d=>d.val) }]
+      });
+    }
+
+    startInput.onchange = updateChartRange;
+    endInput.onchange = updateChartRange;
   });
 }
 
-// ---- FUNCION RENDER (actualización automática y timeline) ----
+// -------------------------
+// 🔹 Renderizar / actualizar gráfico
+// -------------------------
 function renderChart(v){
   const chart = charts[v];
   if(!chart) return;
@@ -137,42 +115,43 @@ function renderChart(v){
   chart._allLabels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   chart._allData = dataArray.map(d => d[v] ?? null);
 
-  const total = chart._allLabels.length;
-  const start = Math.max(0, total - chart.visiblePoints);
-
   chart.setOption({
-    xAxis: [{ data: chart._allLabels.slice(start) }],
-    series: [{ data: chart._allData.slice(start) }]
+    xAxis: { type:'category', data: chart._allLabels },
+    series: [{ data: chart._allData }]
   });
 }
 
-// ---- SOCKET ----
+// -------------------------
+// 🔹 SOCKET.IO
+// -------------------------
 socket.on("connect", () => console.log("🔌 Socket conectado"));
-socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
+socket.on("disconnect", () => console.log("❌ Socket desconectado"));
 
-socket.on("nuevoDato", (data) => {
+socket.on("nuevoDato", data => {
   const record = {...data, fecha: data.fecha ? new Date(data.fecha) : new Date()};
   liveBuffer.push(record);
   if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v=> renderChart(v));
+  variables.forEach(v => renderChart(v));
 
-  if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud,data.longitud);
+  if(data.latitud !== undefined && data.longitud !== undefined) updateMap(data.latitud, data.longitud);
 });
 
-socket.on("historico", (data) => {
-  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v=> renderChart(v));
+socket.on("historico", data => {
+  allData = data.map(d => ({...d, fecha: new Date(d.fecha)}));
+  variables.forEach(v => renderChart(v));
 });
 
-// ---- MONGO ----
+// -------------------------
+// 🔹 MONGO
+// -------------------------
 async function loadLatestFromMongo(){
   try{
     const res = await fetch('/api/data/latest');
     if(!res.ok) throw new Error('Error '+res.status);
     const data = await res.json();
-    return data.map(d=>({...d,fecha:new Date(d.fecha)}));
+    return data.map(d => ({...d, fecha:new Date(d.fecha)}));
   }catch(e){console.error(e); return [];}
 }
 
@@ -180,12 +159,13 @@ async function loadAllFromMongo(){
   try{
     const res = await fetch('/api/data/all');
     if(!res.ok) throw new Error('Error '+res.status);
-    allData = await res.json();
-    allData = allData.map(d=>({...d,fecha:new Date(d.fecha)}));
+    allData = (await res.json()).map(d => ({...d, fecha:new Date(d.fecha)}));
   }catch(e){console.error(e);}
 }
 
-// ---- MAPA ----
+// -------------------------
+// 🔹 MAPA
+// -------------------------
 let map, marker;
 function initMap(){
   map = L.map('map').setView([0,0],2);
@@ -200,32 +180,16 @@ function updateMap(lat,lon){
   marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
 }
 
-// ---- CICLOS ----
-async function refreshDisplay(){
-  const now = Date.now();
-  const diff = now-lastMqttTimestamp;
-
-  for(const v of variables){
-    if(lastMqttTimestamp !== 0 && diff <= MQTT_TIMEOUT_MS){
-      renderChart(v);
-    } else {
-      const mongoLatest = await loadLatestFromMongo();
-      if(mongoLatest.length > 0){
-        allData = mongoLatest;
-        renderChart(v);
-      }
-    }
-  }
-}
-
-// ---- INICIO ----
-(async function init(){
+// -------------------------
+// 🔹 INICIO
+// -------------------------
+window.onload = async function init(){
   initMap();
   createCharts();
   await loadAllFromMongo();
   const latest = await loadLatestFromMongo();
-  if(latest.length) variables.forEach(v=> renderChart(v));
+  if(latest.length) variables.forEach(v => renderChart(v));
 
-  setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
-})();
+  setInterval(() => variables.forEach(v => renderChart(v)), 5000);
+  setInterval(loadAllFromMongo, 30000);
+};

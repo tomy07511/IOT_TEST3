@@ -44,6 +44,7 @@
       overflow:hidden;
     }
     .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
+    .chart-div{width:100%;height:220px;}
     .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
     .btn {
       background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
@@ -52,14 +53,8 @@
     /* Mapa */
     #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
     #map{width:100%;height:420px;border-radius:8px}
-
-    /* ECharts div */
-    .chart-div {
-      width:100%;
-      height:220px;
-    }
     @media (max-width:420px){
-      .chart-div{height:180px}
+      .chart-div{height:180px;}
       #map{height:320px}
     }
   </style>
@@ -67,7 +62,7 @@
 <body>
   <header><h2>Panel de Sensores — IoT</h2></header>
 
-  <!-- MAPA -->
+  <!-- MAP -->
   <div id="mapWrap" class="card">
     <h4>Ubicación GPS</h4>
     <div id="map"></div>
@@ -77,7 +72,7 @@
   <div class="grid" id="chartsGrid">
     <div class="card">
       <h4>Humedad</h4>
-      <div id="humedad" class="chart-div"></div>
+      <div class="chart-div" id="humedad"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="humedad">Reset Zoom</button>
       </div>
@@ -85,7 +80,7 @@
 
     <div class="card">
       <h4>Temperatura</h4>
-      <div id="temperatura" class="chart-div"></div>
+      <div class="chart-div" id="temperatura"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="temperatura">Reset Zoom</button>
       </div>
@@ -93,7 +88,7 @@
 
     <div class="card">
       <h4>Conductividad</h4>
-      <div id="conductividad" class="chart-div"></div>
+      <div class="chart-div" id="conductividad"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="conductividad">Reset Zoom</button>
       </div>
@@ -101,7 +96,7 @@
 
     <div class="card">
       <h4>pH</h4>
-      <div id="ph" class="chart-div"></div>
+      <div class="chart-div" id="ph"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="ph">Reset Zoom</button>
       </div>
@@ -109,7 +104,7 @@
 
     <div class="card">
       <h4>Nitrógeno</h4>
-      <div id="nitrogeno" class="chart-div"></div>
+      <div class="chart-div" id="nitrogeno"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="nitrogeno">Reset Zoom</button>
       </div>
@@ -117,7 +112,7 @@
 
     <div class="card">
       <h4>Fósforo</h4>
-      <div id="fosforo" class="chart-div"></div>
+      <div class="chart-div" id="fosforo"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="fosforo">Reset Zoom</button>
       </div>
@@ -125,7 +120,7 @@
 
     <div class="card">
       <h4>Potasio</h4>
-      <div id="potasio" class="chart-div"></div>
+      <div class="chart-div" id="potasio"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="potasio">Reset Zoom</button>
       </div>
@@ -133,7 +128,7 @@
 
     <div class="card">
       <h4>Batería (ADC)</h4>
-      <div id="bateria" class="chart-div"></div>
+      <div class="chart-div" id="bateria"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="bateria">Reset Zoom</button>
       </div>
@@ -141,7 +136,7 @@
 
     <div class="card">
       <h4>Corriente (raw)</h4>
-      <div id="corriente" class="chart-div"></div>
+      <div class="chart-div" id="corriente"></div>
       <div class="chart-actions">
         <button class="btn" data-reset="corriente">Reset Zoom</button>
       </div>
@@ -155,6 +150,5 @@
       Ver Datos Históricos Tabla
     </button>
   </div>
-
 </body>
 </html>
