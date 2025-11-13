@@ -1,8 +1,6 @@
 // ---- CONFIG ----
 const SOCKET_CONNECT_ORIGIN = window.location.origin;
 const MQTT_TIMEOUT_MS = 20000;
-const LIVE_BUFFER_MAX = 30;
-const TABLE_REFRESH_MS = 30000;
 
 const socket = io.connect(SOCKET_CONNECT_ORIGIN, { transports: ["websocket", "polling"] });
 
@@ -55,12 +53,7 @@ function createCharts() {
         },
         scales:{
           x:{
-            ticks:{
-              color:'#ccc',
-              callback:function(val,index){
-                return this.chart.data.labels.length <= 15 ? this.chart.data.labels[index] : '';
-              }
-            },
+            ticks:{color:'#ccc'},
             grid:{color:'#1e3a4c'}
           },
           y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
@@ -70,10 +63,10 @@ function createCharts() {
 
     charts[v].displayMode = 'live';
 
-    // --- BOTONES ---
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
+    // --- BOTONES ---
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
     btnLive.className = 'btn';
@@ -102,13 +95,13 @@ function createCharts() {
     btnLeft.textContent = '<<';
     btnLeft.className = 'btn';
     btnLeft.style.marginLeft = '6px';
-    btnLeft.onclick = () => shiftHistorical(v, -5);
+    btnLeft.onclick = () => shiftHistorical(v, -10);
 
     const btnRight = document.createElement('button');
     btnRight.textContent = '>>';
     btnRight.className = 'btn';
     btnRight.style.marginLeft = '6px';
-    btnRight.onclick = () => shiftHistorical(v, 5);
+    btnRight.onclick = () => shiftHistorical(v, 10);
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
@@ -124,7 +117,10 @@ function shiftHistorical(v, step){
   if(!chart || chart.displayMode !== 'historical') return;
 
   const total = chart._allLabels.length;
-  const range = Math.min(30, total); // mostrar hasta 30 datos
+  if(total===0) return;
+
+  // rango visible igual al total si no hay límite
+  const range = Math.min(50, total); // puedes ajustar el tamaño de ventana visible
   let start = chart._histStart ?? (total - range);
   start += step;
   start = Math.max(0, Math.min(start, total - range));
@@ -140,7 +136,7 @@ function renderChart(v, autoScroll=false){
   const chart = charts[v];
   if(!chart) return;
 
-  let dataArray = chart.displayMode==='live' ? liveBuffer : allData;
+  const dataArray = chart.displayMode==='live' ? liveBuffer : allData;
   if(!Array.isArray(dataArray)||!dataArray.length) return;
 
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
@@ -151,7 +147,7 @@ function renderChart(v, autoScroll=false){
 
   if(chart.displayMode==='historical'){
     const total = labels.length;
-    const range = Math.min(30, total);
+    const range = Math.min(50, total);
     chart._histStart = total - range;
 
     chart.data.labels = labels.slice(chart._histStart, chart._histStart + range);
@@ -175,7 +171,7 @@ socket.on("disconnect", () => console.log("🔌 Socket desconectado"));
 socket.on("nuevoDato", (data) => {
   const record = {...data, fecha:data.fecha ? new Date(data.fecha) : new Date()};
   liveBuffer.push(record);
-  if(liveBuffer.length > LIVE_BUFFER_MAX) liveBuffer.shift();
+  if(liveBuffer.length > 1000) liveBuffer.shift(); // buffer live más grande
   lastMqttTimestamp = Date.now();
 
   variables.forEach(v => {
@@ -257,5 +253,5 @@ async function refreshDisplay(){
   if(latest.length) variables.forEach(v=>{if(charts[v].displayMode==='live') renderChart(v);});
 
   setInterval(refreshDisplay,5000);
-  setInterval(loadAllFromMongo,TABLE_REFRESH_MS);
+  setInterval(loadAllFromMongo,30000);
 })();
