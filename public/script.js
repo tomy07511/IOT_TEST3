@@ -26,14 +26,6 @@ function createCharts() {
     const el = document.getElementById(v);
     if(!el) return;
 
-    // Contenedor para scroll horizontal real
-    const wrapper = document.createElement("div");
-    wrapper.style.overflowX = "auto";
-    wrapper.style.width = "100%";
-    wrapper.style.paddingBottom = "10px";
-    el.parentElement.insertBefore(wrapper, el);
-    wrapper.appendChild(el);
-
     const ctx = el.getContext('2d');
     charts[v] = new Chart(ctx, {
       type:'line',
@@ -62,7 +54,10 @@ function createCharts() {
           }
         },
         scales:{
-          x:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}},
+          x:{
+            ticks:{color:'#ccc'},
+            grid:{color:'#1e3a4c'}
+          },
           y:{ticks:{color:'#ccc'},grid:{color:'#1e3a4c'}}
         }
       }
@@ -70,14 +65,14 @@ function createCharts() {
 
     charts[v].displayMode = 'live';
 
+    // --- Botones ---
     const btnReset = document.querySelector(`button[data-reset="${v}"]`);
     if(btnReset) btnReset.onclick = () => charts[v].resetZoom();
 
-    // ---- Botones Datos Actuales / Histórico
     const btnLive = document.createElement('button');
     btnLive.textContent = 'Datos actuales';
-    btnLive.className = 'btn';
-    btnLive.style.marginLeft = '6px';
+    btnLive.className='btn';
+    btnLive.style.marginLeft='6px';
     btnLive.disabled = true;
     btnLive.onclick = () => {
       charts[v].displayMode = 'live';
@@ -88,29 +83,27 @@ function createCharts() {
 
     const btnHist = document.createElement('button');
     btnHist.textContent = 'Histórico';
-    btnHist.className = 'btn';
-    btnHist.style.marginLeft = '6px';
+    btnHist.className='btn';
+    btnHist.style.marginLeft='6px';
     btnHist.disabled = false;
-    btnHist.onclick = async () => {
+    btnHist.onclick = () => {
       charts[v].displayMode = 'historical';
       btnHist.disabled = true;
       btnLive.disabled = false;
-      await loadAllFromMongo();
       renderChart(v);
     };
 
-    // ---- Botones mover izquierda/derecha
     const btnLeft = document.createElement('button');
     btnLeft.textContent = '←';
-    btnLeft.className = 'btn';
-    btnLeft.style.marginLeft = '6px';
-    btnLeft.onclick = () => moveChart(v, -5); // mover 5 puntos a la izquierda
+    btnLeft.className='btn';
+    btnLeft.style.marginLeft='6px';
+    btnLeft.onclick = () => moveChart(v, -1);
 
     const btnRight = document.createElement('button');
     btnRight.textContent = '→';
-    btnRight.className = 'btn';
-    btnRight.style.marginLeft = '6px';
-    btnRight.onclick = () => moveChart(v, 5); // mover 5 puntos a la derecha
+    btnRight.className='btn';
+    btnRight.style.marginLeft='6px';
+    btnRight.onclick = () => moveChart(v, 1);
 
     const actionsDiv = btnReset.parentElement;
     actionsDiv.appendChild(btnLive);
@@ -120,20 +113,13 @@ function createCharts() {
   });
 }
 
-// ---- MOVER HISTÓRICO ----
-function moveChart(v, step){
+// ---- FUNCIONES DE MOVIMIENTO ----
+function moveChart(v, dir){
   const chart = charts[v];
-  if(!chart || chart.displayMode!=='historical') return;
-  const total = chart._allLabels?.length || 0;
-  if(total <= 15) return;
+  if(!chart) return;
 
-  let start = chart._startIndex ?? (total - 15);
-  start = Math.max(0, Math.min(total - 15, start + step));
-  chart._startIndex = start;
-
-  chart.data.labels = chart._allLabels.slice(start, start + 15);
-  chart.data.datasets[0].data = chart._allData.slice(start, start + 15);
-  chart.update();
+  const wrapper = chart.canvas.parentElement;
+  wrapper.scrollLeft += dir * 100; // ajusta la cantidad de desplazamiento
 }
 
 // ---- RENDER ----
@@ -147,23 +133,14 @@ function renderChart(v, autoScroll=false){
   const labels = dataArray.map(d => new Date(d.fecha).toLocaleString());
   const dataset = dataArray.map(d => d[v] ?? null);
 
-  chart._allLabels = labels;
-  chart._allData = dataset;
-
-  if(chart.displayMode==='historical'){
-    const start = chart._startIndex ?? Math.max(0, labels.length - 15);
-    chart._startIndex = start;
-    chart.data.labels = labels.slice(start, start + 15);
-    chart.data.datasets[0].data = dataset.slice(start, start + 15);
-  } else {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = dataset;
-    if(autoScroll){
-      chart._startIndex = Math.max(0, labels.length - 15);
-    }
-  }
-
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = dataset;
   chart.update();
+
+  if(autoScroll){
+    const wrapper = chart.canvas.parentElement;
+    wrapper.scrollLeft = wrapper.scrollWidth;
+  }
 }
 
 // ---- SOCKET ----
@@ -176,14 +153,18 @@ socket.on("nuevoDato", (data) => {
   if(liveBuffer.length>LIVE_BUFFER_MAX) liveBuffer.shift();
   lastMqttTimestamp = Date.now();
 
-  variables.forEach(v => { if(charts[v].displayMode==='live') renderChart(v); });
+  variables.forEach(v=>{
+    if(charts[v].displayMode==='live') renderChart(v);
+  });
 
   if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud,data.longitud);
 });
 
 socket.on("historico", (data) => {
   allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
-  variables.forEach(v => { if(charts[v].displayMode==='historical') renderChart(v); });
+  variables.forEach(v=>{
+    if(charts[v].displayMode==='historical') renderChart(v);
+  });
 });
 
 // ---- MONGO ----
