@@ -1,87 +1,96 @@
-// ================= MAPA =================
-const map = L.map('map').setView([0,0],2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'© OpenStreetMap'
-}).addTo(map);
-const marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
+const variables = ["humedad","temperatura","conductividad","ph","nitrogeno","fosforo","potasio","bateria","corriente"];
+const charts = {};
+let allData = [];
+let liveBuffer = [];
+let lastMqttTimestamp = 0;
 
-function updateMap(lat, lon){
-  marker.setLatLng([lat,lon]);
-  map.setView([lat,lon],14);
+// ================= MAPA =================
+let map, marker;
+function initMap() {
+  map = L.map('map').setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+  marker = L.marker([0,0]).addTo(map).bindPopup('Esperando datos GPS...');
+}
+function updateMap(lat, lon) {
+  if(!map || !marker || lat === undefined || lon === undefined) return;
+  marker.setLatLng([lat, lon]);
+  map.setView([lat, lon], 14);
   marker.setPopupContent(`📍 Lat:${lat.toFixed(5)}<br>Lon:${lon.toFixed(5)}`).openPopup();
 }
 
 // ================= ECHARTS =================
-var roundTime = echarts.time.roundTime;
-var formatTime = echarts.time.format;
-var BREAK_GAP = '1%';
-var DATA_ZOOM_MIN_VALUE_SPAN = 3600*1000;
+function createCharts() {
+  const container = document.getElementById('chartsContainer');
+  variables.forEach(v => {
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'chartBox';
+    chartDiv.id = 'chart_'+v;
+    container.appendChild(chartDiv);
 
-const myChart = echarts.init(document.getElementById('main'));
-let allData = [];
-
-function renderChart(dataArray){
-  if(!dataArray.length) return;
-  dataArray.sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
-
-  const seriesData = [];
-  const breaks = [];
-  let prevDay = null;
-
-  dataArray.forEach(d=>{
-    const time = new Date(d.fecha).getTime();
-    const val = d.temperatura ?? NaN; // Cambia la variable que quieras graficar
-    seriesData.push([time,val]);
-    const day = new Date(d.fecha).getUTCDate();
-    if(prevDay!==null && day!==prevDay) breaks.push({start:time-1,end:time,gap:BREAK_GAP});
-    prevDay = day;
+    const chart = echarts.init(chartDiv);
+    const option = {
+      useUTC:true,
+      title: { text:v.toUpperCase(), left:'center', textStyle:{color:'#fff'} },
+      tooltip: { trigger:'axis' },
+      xAxis: { type:'time', axisLabel:{color:'#fff'} },
+      yAxis: { type:'value', min:'dataMin', axisLabel:{color:'#fff'} },
+      dataZoom:[{type:'inside'},{type:'slider', top:'85%'}],
+      series:[{ type:'line', symbolSize:0, areaStyle:{}, data: [] }]
+    };
+    chart.setOption(option);
+    charts[v] = chart;
   });
+}
 
-  const option = {
-    useUTC:true,
-    title:{ text:'Temperatura en Tiempo Real', left:'center' },
-    tooltip:{ trigger:'axis' },
-    grid:{ outerBounds:{ top:'20%', bottom:'30%' } },
-    xAxis:[{
-      type:'time',
-      interval: 1000*60*30,
-      axisLabel:{ 
-        showMinLabel:true, 
-        showMaxLabel:true,
-        formatter:(t,_,opt)=>opt.break?echarts.time.format(t,'{HH}:{mm}\n{dd}d',true):echarts.time.format(t,'{HH}:{mm}',true)
-      },
-      breaks: breaks,
-      breakArea:{ expandOnClick:false, zigzagAmplitude:0, zigzagZ:200, itemStyle:{borderColor:'none',opacity:0} }
-    }],
-    yAxis:{ type:'value', min:'dataMin' },
-    dataZoom:[
-      { type:'inside', minValueSpan: DATA_ZOOM_MIN_VALUE_SPAN },
-      { type:'slider', top:'73%', minValueSpan: DATA_ZOOM_MIN_VALUE_SPAN }
-    ],
-    series:[{ type:'line', symbolSize:0, areaStyle:{}, data:seriesData }]
-  };
+// ================= RENDER DATOS =================
+function renderChart(v) {
+  const chart = charts[v];
+  if(!chart) return;
+  const dataArray = allData.concat(liveBuffer);
+  if(!dataArray.length) return;
 
-  myChart.setOption(option);
+  dataArray.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+
+  const seriesData = dataArray.map(d => [new Date(d.fecha).getTime(), d[v] ?? null]);
+  chart.setOption({ series:[{ data: seriesData }] });
 }
 
 // ================= SOCKET.IO =================
 const socket = io();
-socket.on("connect", ()=>console.log("🔌 Socket conectado"));
-socket.on("disconnect", ()=>console.log("🔌 Socket desconectado"));
+socket.on("connect",()=>console.log("🔌 Socket conectado"));
+socket.on("disconnect",()=>console.log("🔌 Socket desconectado"));
 
-// Datos en tiempo real
-socket.on("nuevoDato", (data)=>{
-  const record = {...data, fecha:new Date(data.fecha)};
-  allData.push(record);
-  if(allData.length>200) allData.shift(); // Limitar buffer
-  renderChart(allData);
-
-  if(data.latitud!==undefined && data.longitud!==undefined)
-    updateMap(data.latitud,data.longitud);
+socket.on("historico", (data) => {
+  allData = data.map(d => ({...d, fecha:new Date(d.fecha)}));
+  variables.forEach(v => renderChart(v));
 });
 
-// Históricos iniciales
-socket.on("historico", (data)=>{
-  allData = data.map(d=>({...d, fecha:new Date(d.fecha)}));
-  renderChart(allData);
+socket.on("nuevoDato", (data) => {
+  const record = {...data, fecha: new Date(data.fecha)};
+  liveBuffer.push(record);
+  if(liveBuffer.length>30) liveBuffer.shift();
+  lastMqttTimestamp = Date.now();
+  variables.forEach(v => renderChart(v));
+  if(data.latitud!==undefined && data.longitud!==undefined) updateMap(data.latitud, data.longitud);
 });
+
+// ================= INIT =================
+function init() {
+  initMap();
+  createCharts();
+
+  // Cargar datos históricos desde tu API
+  fetch('/api/data/all').then(r=>r.json()).then(d=>{
+    allData = d.map(d => ({...d, fecha:new Date(d.fecha)}));
+    variables.forEach(v => renderChart(v));
+  });
+
+  // Actualizar cada 30 seg
+  setInterval(()=>{
+    fetch('/api/data/latest').then(r=>r.json()).then(latest=>{
+      allData = latest.map(d => ({...d, fecha:new Date(d.fecha)}));
+      variables.forEach(v => renderChart(v));
+    });
+  }, 30000);
+}
+init();

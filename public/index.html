@@ -1,28 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <meta charset="utf-8">
-  <title>Mapa + Intraday Chart en Tiempo Real</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Sensores</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  
   <!-- ECharts -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-  <!-- Leaflet para el mapa -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  
   <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
+
   <style>
-    #map { height: 300px; margin-bottom:20px; }
-    #main { width: 100%; height:400px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #121212;
+      color: #fff;
+    }
+    #map {
+      height: 400px;
+      margin: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #000;
+    }
+    .chartBox {
+      width: 90%;
+      height: 350px;
+      margin: 20px auto;
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 0 10px #000;
+    }
   </style>
 </head>
 <body>
 
-  <!-- Contenedor del mapa -->
-  <div id="map"></div>
-  <!-- Contenedor del gráfico -->
-  <div id="main"></div>
+  <h1 style="text-align:center;">Panel de Sensores</h1>
 
-  <!-- Script para manejar mapa y gráfica -->
+  <div id="map"></div>
+  <div id="chartsContainer"></div>
+
   <script src="script.js"></script>
 </body>
 </html>
