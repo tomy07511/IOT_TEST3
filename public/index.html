@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Panel de Sensores — IoT</title>
 
-  <!-- ECharts -->
-  <script type="module" src="script.js"></script>
-
   <!-- Leaflet + Fullscreen plugin -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -16,6 +13,9 @@
 
   <!-- Socket.IO -->
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- ECharts CDN -->
+  <script type="module" src="script.js"></script>
 
   <style>
     :root{
@@ -39,24 +39,14 @@
       border-radius:12px;
       padding:12px;
       box-shadow:0 6px 18px rgba(0,229,255,0.06);
-      min-height:120px;
+      min-height:260px;
       position:relative;
       overflow:hidden;
     }
     .card h4{margin:0 0 8px 0;color:var(--accent);font-weight:600}
-    .chart-div{width:100%;height:220px;}
-    .chart-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
-    .btn {
-      background:var(--accent); color:#002; border:none; padding:6px 10px;border-radius:8px; cursor:pointer;
-    }
-    .btn[disabled]{opacity:.5;cursor:default}
-    /* Mapa */
+    .echart{width:100%;height:220px}
     #mapWrap{width:95%;margin:16px auto;border-radius:12px;padding:10px;background:var(--card)}
     #map{width:100%;height:420px;border-radius:8px}
-    @media (max-width:420px){
-      .chart-div{height:180px;}
-      #map{height:320px}
-    }
   </style>
 </head>
 <body>
@@ -69,86 +59,16 @@
   </div>
 
   <!-- GRÁFICAS -->
-  <div class="grid" id="chartsGrid">
-    <div class="card">
-      <h4>Humedad</h4>
-      <div class="chart-div" id="humedad"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="humedad">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Temperatura</h4>
-      <div class="chart-div" id="temperatura"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="temperatura">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Conductividad</h4>
-      <div class="chart-div" id="conductividad"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="conductividad">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>pH</h4>
-      <div class="chart-div" id="ph"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="ph">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Nitrógeno</h4>
-      <div class="chart-div" id="nitrogeno"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="nitrogeno">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Fósforo</h4>
-      <div class="chart-div" id="fosforo"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="fosforo">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Potasio</h4>
-      <div class="chart-div" id="potasio"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="potasio">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Batería (ADC)</h4>
-      <div class="chart-div" id="bateria"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="bateria">Reset Zoom</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h4>Corriente (raw)</h4>
-      <div class="chart-div" id="corriente"></div>
-      <div class="chart-actions">
-        <button class="btn" data-reset="corriente">Reset Zoom</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- BOTÓN A HISTÓRICOS -->
-  <div style="text-align:center; margin:16px;">
-    <button onclick="window.open('historicos.html', '_blank')" 
-            style="padding:10px 16px; border:none; border-radius:8px; background:var(--accent); color:#002; cursor:pointer;">
-      Ver Datos Históricos Tabla
-    </button>
+  <div class="grid">
+    <div class="card"><h4>Humedad</h4><div id="humedad" class="echart"></div></div>
+    <div class="card"><h4>Temperatura</h4><div id="temperatura" class="echart"></div></div>
+    <div class="card"><h4>Conductividad</h4><div id="conductividad" class="echart"></div></div>
+    <div class="card"><h4>pH</h4><div id="ph" class="echart"></div></div>
+    <div class="card"><h4>Nitrógeno</h4><div id="nitrogeno" class="echart"></div></div>
+    <div class="card"><h4>Fósforo</h4><div id="fosforo" class="echart"></div></div>
+    <div class="card"><h4>Potasio</h4><div id="potasio" class="echart"></div></div>
+    <div class="card"><h4>Batería (ADC)</h4><div id="bateria" class="echart"></div></div>
+    <div class="card"><h4>Corriente (raw)</h4><div id="corriente" class="echart"></div></div>
   </div>
 </body>
 </html>
