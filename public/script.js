@@ -397,29 +397,75 @@ function updateSliderBackground(slider, value) {
   slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS ----
+// ---- ZOOM A ÚLTIMOS DATOS (CORREGIDA) ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
   
-  const last15 = buf.x.slice(-15).map(x => new Date(x));
-  const lastValues = buf.y.slice(-15);
+  // Validaciones robustas
+  if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
+    console.log(`⚠️ No hay datos para ${varName}`);
+    return;
+  }
   
-  if (last15.length > 0) {
-    const minX = new Date(Math.min(...last15.map(x => x.getTime())));
-    const maxX = new Date(Math.max(...last15.map(x => x.getTime())));
-    const minY = Math.min(...lastValues);
-    const maxY = Math.max(...lastValues);
-    const padding = (maxY - minY) * 0.1 || 1;
+  // Verificar que la gráfica existe y está lista
+  if (!charts[varName] || !charts[varName].div) {
+    console.log(`⚠️ Gráfica de ${varName} no está lista`);
+    return;
+  }
+  
+  // Tomar últimos 15 datos (o menos si no hay suficientes)
+  const dataCount = buf.x.length;
+  const pointsToShow = Math.min(15, dataCount);
+  
+  if (pointsToShow === 0) {
+    console.log(`⚠️ No hay datos suficientes para ${varName}`);
+    return;
+  }
+  
+  const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
+  const lastValues = buf.y.slice(-pointsToShow);
+  
+  // Validar que las fechas sean válidas
+  const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
+  const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
+  
+  if (validDates.length === 0 || validValues.length === 0) {
+    console.log(`⚠️ Datos inválidos para ${varName}`);
+    return;
+  }
+  
+  // Calcular rangos con padding
+  const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
+  const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
+  const minY = Math.min(...validValues);
+  const maxY = Math.max(...validValues);
+  
+  // Agregar padding para mejor visualización
+  const timeRange = maxX.getTime() - minX.getTime();
+  const valueRange = maxY - minY;
+  
+  const paddedMinX = new Date(minX.getTime() - timeRange * 0.1);
+  const paddedMaxX = new Date(maxX.getTime() + timeRange * 0.1);
+  const paddedMinY = minY - valueRange * 0.1;
+  const paddedMaxY = maxY + valueRange * 0.1;
+  
+  // Aplicar zoom solo si los rangos son válidos
+  if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
+      !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
     
     Plotly.relayout(charts[varName].div, {
-      'xaxis.range': [minX, maxX],
-      'yaxis.range': [minY - padding, maxY + padding],
+      'xaxis.range': [paddedMinX, paddedMaxX],
+      'yaxis.range': [paddedMinY, paddedMaxY],
       'xaxis.autorange': false,
       'yaxis.autorange': false
     });
     
-    console.log(`🔍 Zoom a últimos ${last15.length} datos de ${varName}`);
+    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
+    console.log(`📊 Rango X: ${paddedMinX.toLocaleTimeString()} - ${paddedMaxX.toLocaleTimeString()}`);
+    console.log(`📈 Rango Y: ${paddedMinY.toFixed(2)} - ${paddedMaxY.toFixed(2)}`);
+    
+  } else {
+    console.log(`❌ Rangos inválidos para ${varName}`);
   }
 }
 
@@ -472,7 +518,7 @@ function updateChart(varName) {
     connectgaps: false
   };
   
-  Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
+  Plotly.react(charts[varName].div, [trace], charts[v].layout, charts[v].config);
   
   console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
@@ -642,4 +688,4 @@ function verificarElementos() {
   
   console.log('✅ Aplicación completamente inicializada');
   console.log('📡 Esperando datos MQTT en tiempo real...');
-})(); 
+})();
