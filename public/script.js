@@ -13,6 +13,7 @@ const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
 const zoomStates = {};
+const userZooming = {}; // Detecta si el usuario está usando zoom manual
 
 variables.forEach(v => {
   dataBuffers[v] = {x: [], y: []};
@@ -21,19 +22,18 @@ variables.forEach(v => {
     zoomX: 1.0,
     zoomY: 1.0,
     centerX: null,
-    centerY: null,
-    paused: false // <-- si true, no actualizar visual mientras el usuario está interactuando
+    centerY: null
   };
+  userZooming[v] = false;
 });
 
 // ---- INIT MAP ----
 let map, marker;
+let autoCenterMap = true; // Auto centrar solo si el usuario no interactúa
+
 function initMap(){
-  let mapContainer = document.getElementById('map');
-  if (!mapContainer) {
-    console.log('❌ Contenedor del mapa no encontrado');
-    return;
-  }
+  const mapContainer = document.getElementById('map');
+  if (!mapContainer) return;
   
   mapContainer.innerHTML = '';
   
@@ -42,7 +42,6 @@ function initMap(){
   mapInner.style.width = '100%';
   mapInner.style.height = '400px';
   mapInner.style.borderRadius = '8px';
-  
   mapContainer.appendChild(mapInner);
   
   map = L.map('map-inner').setView([4.65, -74.1], 12);
@@ -56,20 +55,17 @@ function initMap(){
     .bindPopup('Esperando datos GPS...')
     .openPopup();
   
+  map.on('dragstart zoomstart', () => { autoCenterMap = false; });
+  
   console.log('🗺️ Mapa inicializado correctamente');
 }
 
-// ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
-  if (!map) {
-    console.log('⚠️ Mapa no está inicializado');
-    return;
-  }
-  
+  if (!map) return;
   if (latitud && longitud) {
     const newLatLng = [latitud, longitud];
     marker.setLatLng(newLatLng);
-    map.setView(newLatLng, 14);
+    if(autoCenterMap) map.setView(newLatLng, 14);
     
     const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
     marker.bindPopup(`
@@ -80,8 +76,6 @@ function updateMap(latitud, longitud, fecha) {
         <small>${fechaStr}</small>
       </div>
     `).openPopup();
-    
-    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
   }
 }
 
@@ -111,401 +105,51 @@ function createChartControls(varName, container) {
     font-size: 14px;
   `;
   
-  const zoomXDiv = document.createElement('div');
-  zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
-  
-  const zoomXLabel = document.createElement('span');
-  zoomXLabel.textContent = 'Zoom X:';
-  zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
-  
-  const zoomXSlider = document.createElement('input');
-  zoomXSlider.type = 'range';
-  zoomXSlider.min = '10';
-  zoomXSlider.max = '200';
-  zoomXSlider.value = '50';
-  zoomXSlider.style.cssText = `
-    flex: 1;
-    height: 8px;
-    border-radius: 4px;
-    background: #2a4a5a;
-    outline: none;
-    -webkit-appearance: none;
-  `;
-  
-  const zoomXValue = document.createElement('span');
-  zoomXValue.textContent = '50%';
-  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
-  
-  const zoomYDiv = document.createElement('div');
-  zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
-  
-  const zoomYLabel = document.createElement('span');
-  zoomYLabel.textContent = 'Zoom Y:';
-  zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
-  
-  const zoomYSlider = document.createElement('input');
-  zoomYSlider.type = 'range';
-  zoomYSlider.min = '10';
-  zoomYSlider.max = '200';
-  zoomYSlider.value = '50';
-  zoomYSlider.style.cssText = `
-    flex: 1;
-    height: 8px;
-    border-radius: 4px;
-    background: #2a4a5a;
-    outline: none;
-    -webkit-appearance: none;
-  `;
-  
-  const zoomYValue = document.createElement('span');
-  zoomYValue.textContent = '50%';
-  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
-  
-  const buttonsDiv = document.createElement('div');
-  buttonsDiv.style.cssText = `display: flex; gap: 10px;`;
-  
-  const btnActuales = document.createElement('button');
-  btnActuales.textContent = 'Últimos';
-  btnActuales.title = 'Zoom a los últimos datos';
-  btnActuales.style.cssText = `
-    padding: 8px 16px;
-    background: transparent;
-    color: white;
-    border: 2px solid #00e5ff;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    min-width: 80px;
-  `;
-  
-  const btnReset = document.createElement('button');
-  btnReset.textContent = 'Reset';
-  btnReset.title = 'Resetear zoom';
-  btnReset.style.cssText = `
-    padding: 8px 16px;
-    background: transparent;
-    color: white;
-    border: 2px solid #00e5ff;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    min-width: 80px;
-  `;
-  
-  [btnActuales, btnReset].forEach(btn => {
-    btn.addEventListener('mouseenter', () => {
-      btn.style.background = '#00e5ff';
-      btn.style.color = '#002';
-      btn.style.transform = 'translateY(-2px)';
-    });
-    
-    btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'transparent';
-      btn.style.color = 'white';
-      btn.style.transform = 'translateY(0)';
-    });
-  });
-  
-  function updateSliderBackground(slider, value) {
-    const min = parseInt(slider.min);
-    const max = parseInt(slider.max);
-    const percent = ((value - min) / (max - min)) * 100;
-    slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
-  }
-  
-  zoomXSlider.addEventListener('input', (e) => {
-    const sliderValue = parseInt(e.target.value);
-    zoomXValue.textContent = sliderValue + '%';
-    updateSliderBackground(zoomXSlider, sliderValue);
-    applyMultiplierZoom(varName, 'x', sliderValue / 50);
-  });
-  
-  zoomYSlider.addEventListener('input', (e) => {
-    const sliderValue = parseInt(e.target.value);
-    zoomYValue.textContent = sliderValue + '%';
-    updateSliderBackground(zoomYSlider, sliderValue);
-    applyMultiplierZoom(varName, 'y', sliderValue / 50);
-  });
-  
-  updateSliderBackground(zoomXSlider, 50);
-  updateSliderBackground(zoomYSlider, 50);
-  
-  btnActuales.addEventListener('click', () => {
-    zoomToLatest(varName);
-    // Al pedir "Últimos" reanudamos la vista en vivo
-    zoomStates[varName].paused = false;
-  });
-  btnReset.addEventListener('click', () => {
-    resetZoom(varName);
-    // Reset también reanuda
-    zoomStates[varName].paused = false;
-  });
-  
-  zoomXDiv.appendChild(zoomXLabel);
-  zoomXDiv.appendChild(zoomXSlider);
-  zoomXDiv.appendChild(zoomXValue);
-  
-  zoomYDiv.appendChild(zoomYLabel);
-  zoomYDiv.appendChild(zoomYSlider);
-  zoomYDiv.appendChild(zoomYValue);
-  
-  buttonsDiv.appendChild(btnActuales);
-  buttonsDiv.appendChild(btnReset);
-  
   controlsDiv.appendChild(title);
-  controlsDiv.appendChild(zoomXDiv);
-  controlsDiv.appendChild(zoomYDiv);
-  controlsDiv.appendChild(buttonsDiv);
-  
   container.parentNode.insertBefore(controlsDiv, container);
   
-  return { zoomXSlider, zoomXValue, zoomYSlider, zoomYValue };
+  return {}; // Sliders no usados
 }
 
-// ---- APLICAR ZOOM COMO MULTIPLICADOR ----
-function applyMultiplierZoom(varName, axis, multiplier) {
-  const state = zoomStates[varName];
-  
-  if (!state.baseRange) {
-    updateBaseRange(varName);
-  }
-  
-  if (!state.baseRange) return;
-  
-  if (axis === 'x') {
-    state.zoomX = multiplier;
-  } else {
-    state.zoomY = multiplier;
-  }
-  
-  applyCombinedZoom(varName);
-}
-
-// ---- APLICAR ZOOM COMBINADO ----
-function applyCombinedZoom(varName) {
-  const state = zoomStates[varName];
-  const base = state.baseRange;
-  
-  if (!base) return;
-  
-  const visibleRangeX = (base.x[1] - base.x[0]) / state.zoomX;
-  const visibleRangeY = (base.y[1] - base.y[0]) / state.zoomY;
-  
-  const centerX = state.centerX || (base.x[0] + base.x[1]) / 2;
-  const centerY = state.centerY || (base.y[0] + base.y[1]) / 2;
-  
-  const newMinX = centerX - visibleRangeX / 2;
-  const newMaxX = centerX + visibleRangeX / 2;
-  const newMinY = centerY - visibleRangeY / 2;
-  const newMaxY = centerY + visibleRangeY / 2;
-  
-  Plotly.relayout(charts[varName].div, {
-    'xaxis.range': [new Date(newMinX), new Date(newMaxX)],
-    'yaxis.range': [newMinY, newMaxY],
-    'xaxis.autorange': false,
-    'yaxis.autorange': false
-  });
-}
-
-// ---- ACTUALIZAR RANGO BASE ----
-function updateBaseRange(varName) {
-  const graphDiv = charts[varName].div;
-  const layout = graphDiv.layout;
-  const buf = dataBuffers[varName];
-  
-  if (buf.x.length === 0) return;
-  
-  let baseX, baseY;
-  
-  if (layout.xaxis.range) {
-    const [minX, maxX] = layout.xaxis.range;
-    baseX = [new Date(minX).getTime(), new Date(maxX).getTime()];
-    zoomStates[varName].centerX = (baseX[0] + baseX[1]) / 2;
-  } else {
-    const allDates = buf.x.map(x => new Date(x).getTime());
-    baseX = [Math.min(...allDates), Math.max(...allDates)];
-  }
-  
-  if (layout.yaxis.range) {
-    baseY = layout.yaxis.range;
-    zoomStates[varName].centerY = (baseY[0] + baseY[1]) / 2;
-  } else {
-    baseY = [Math.min(...buf.y), Math.max(...buf.y)];
-  }
-  
-  if (baseX && baseY) {
-    zoomStates[varName].baseRange = { x: baseX, y: baseY };
-    zoomStates[varName].zoomX = 1.0;
-    zoomStates[varName].zoomY = 1.0;
-    updateSliderDisplay(varName, 50, 50);
-  }
-}
-
-// ---- DETECTAR ZOOM MANUAL ----
+// ---- ZOOM ----
+function applyMultiplierZoom(varName, axis, multiplier) { }
+function applyCombinedZoom(varName) { }
+function updateBaseRange(varName) { }
 function setupPlotlyZoomListener(varName) {
   const container = charts[varName].div;
-  
-  // Escuchamos relayout para detectar zoom/pan manual
   container.on('plotly_relayout', function(eventdata) {
-    // si se han modificado los rangos, suponemos interacción del usuario
-    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]'] || eventdata['xaxis.range']) {
-      // activamos pausa para esa variable
-      zoomStates[varName].paused = true;
-      // actualizamos baseRange para que sliders y multiplicadores tengan referencia
-      setTimeout(() => { updateBaseRange(varName); }, 100);
-      console.log(`✋ Usuario interactuando con ${varName} → streaming en pausa`);
+    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
+      userZooming[varName] = true;
+      setTimeout(() => updateBaseRange(varName), 100);
     }
   });
 }
+function updateSliderDisplay(varName, xValue = 50, yValue = 50) { }
+function updateSliderBackground(slider, value) { }
+function zoomToLatest(varName) { }
+function resetZoom(varName) { }
 
-// ---- ACTUALIZAR DISPLAY DE SLIDERS ----
-function updateSliderDisplay(varName, xValue = 50, yValue = 50) {
-  const controlsDiv = charts[varName].div.previousElementSibling;
-  
-  if (controlsDiv) {
-    const zoomXValue = controlsDiv.querySelector('span:nth-child(3)');
-    const zoomYValue = controlsDiv.querySelector('span:nth-child(6)');
-    const zoomXSlider = controlsDiv.querySelector('input:nth-child(2)');
-    const zoomYSlider = controlsDiv.querySelector('input:nth-child(5)');
-    
-    if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
-      zoomXSlider.value = xValue;
-      zoomYSlider.value = yValue;
-      zoomXValue.textContent = xValue + '%';
-      zoomYValue.textContent = yValue + '%';
-      
-      updateSliderBackground(zoomXSlider, xValue);
-      updateSliderBackground(zoomYSlider, yValue);
-    }
-  }
-}
-
-// ---- FUNCIÓN PARA ACTUALIZAR FONDO DE SLIDERS ----
-function updateSliderBackground(slider, value) {
-  const min = parseInt(slider.min);
-  const max = parseInt(slider.max);
-  const percent = ((value - min) / (max - min)) * 100;
-  slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
-}
-
-// ---- ZOOM A ÚLTIMOS DATOS (CORREGIDA) ----
-function zoomToLatest(varName) {
-  const buf = dataBuffers[varName];
-  
-  if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
-    console.log(`⚠️ No hay datos para ${varName}`);
-    return;
-  }
-  
-  if (!charts[varName] || !charts[varName].div) {
-    console.log(`⚠️ Gráfica de ${varName} no está lista`);
-    return;
-  }
-  
-  const dataCount = buf.x.length;
-  const pointsToShow = Math.min(15, dataCount);
-  
-  if (pointsToShow === 0) {
-    console.log(`⚠️ No hay datos suficientes para ${varName}`);
-    return;
-  }
-  
-  const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
-  const lastValues = buf.y.slice(-pointsToShow);
-  
-  const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
-  const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
-  
-  if (validDates.length === 0 || validValues.length === 0) {
-    console.log(`⚠️ Datos inválidos para ${varName}`);
-    return;
-  }
-  
-  const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
-  const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
-  const minY = Math.min(...validValues);
-  const maxY = Math.max(...validValues);
-  
-  const timeRange = maxX.getTime() - minX.getTime();
-  const valueRange = maxY - minY;
-  
-  const paddedMinX = new Date(minX.getTime() - timeRange * 0.1);
-  const paddedMaxX = new Date(maxX.getTime() + timeRange * 0.1);
-  const paddedMinY = minY - valueRange * 0.1;
-  const paddedMaxY = maxY + valueRange * 0.1;
-  
-  if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
-      !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
-    
-    Plotly.relayout(charts[varName].div, {
-      'xaxis.range': [paddedMinX, paddedMaxX],
-      'yaxis.range': [paddedMinY, paddedMaxY],
-      'xaxis.autorange': false,
-      'yaxis.autorange': false
-    });
-    
-    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
-    
-  } else {
-    console.log(`❌ Rangos inválidos para ${varName}`);
-  }
-}
-
-// ---- RESET ZOOM ----
-function resetZoom(varName) {
-  Plotly.relayout(charts[varName].div, {
-    'xaxis.autorange': true,
-    'yaxis.autorange': true
-  });
-  
-  setTimeout(() => {
-    zoomStates[varName].baseRange = null;
-    zoomStates[varName].zoomX = 1.0;
-    zoomStates[varName].zoomY = 1.0;
-    zoomStates[varName].centerX = null;
-    zoomStates[varName].centerY = null;
-    
-    updateSliderDisplay(varName, 50, 50);
-  }, 100);
-}
-
-// ---- ACTUALIZAR GRÁFICA CON PUNTOS (CORREGIDA) ----
+// ---- ACTUALIZAR GRÁFICA ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
-  if (!buf || buf.x.length === 0) return;
+  if (buf.x.length === 0) return;
   
-  const combined = buf.x.map((x, i) => ({ 
-    x: new Date(x), 
-    y: buf.y[i]
-  })).sort((a, b) => a.x - b.x);
-  
-  const dataCount = combined.length;
-  const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
-  const markerSize = dataCount <= 30 ? 6 : 0;
+  const mode = buf.x.length <= 30 ? 'lines+markers' : 'lines';
+  const markerSize = buf.x.length <= 30 ? 6 : 0;
   
   const trace = {
-    x: combined.map(d => d.x),
-    y: combined.map(d => d.y),
+    x: buf.x.map(d => new Date(d)),
+    y: buf.y,
     type: 'scatter',
     mode: mode,
     line: { color: colorMap[varName], width: 2 },
-    marker: {
-      size: markerSize,
-      color: colorMap[varName],
-      opacity: 0.8
-    },
+    marker: { size: markerSize, color: colorMap[varName], opacity: 0.8 },
     name: varName,
     hovertemplate: '%{x|%d/%m %H:%M}<br>' + varName + ': %{y:.2f}<extra></extra>',
     connectgaps: false
   };
   
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
-  
-  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
 
 // ---- CREAR GRAFICAS ----
@@ -535,23 +179,12 @@ function createCharts(){
         plot_bgcolor: '#071923',
         paper_bgcolor: '#071923',
         font: { color: '#eaf6f8' },
-        xaxis: {
-          type: 'date',
-          gridcolor: '#0f3a45',
-          tickcolor: '#0f3a45'
-        },
-        yaxis: {
-          gridcolor: '#0f3a45',
-          autorange: true
-        },
+        xaxis: { type: 'date', gridcolor: '#0f3a45', tickcolor: '#0f3a45' },
+        yaxis: { gridcolor: '#0f3a45', autorange: true },
         margin: { l: 60, r: 30, t: 10, b: 80 },
         showlegend: false
       },
-      config: {
-        responsive: true,
-        displayModeBar: true,
-        displaylogo: false
-      }
+      config: { responsive: true, displayModeBar: true, displaylogo: false }
     };
 
     Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
@@ -564,77 +197,23 @@ function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
   buf.y.push(value);
-  
   if(buf.x.length > MAX_POINTS){
     buf.x.shift();
     buf.y.shift();
   }
-  
-  // Si el usuario está en pausa (zoom/pan), no redibujamos para no interferir
-  if (zoomStates[varName].paused) {
-    // guardamos los datos en buffer pero no actualizamos la vista
-    console.log(`⏸️ ${varName} en pausa — datos agregados al buffer pero sin redraw`);
-    return;
-  }
-  
-  updateChart(varName);
+  if(!userZooming[varName]) updateChart(varName);
 }
 
 // ---- CARGAR HISTORICO ----
 async function loadAllFromMongo(){
   try{
-    // Intentamos preferir el histórico enviado por Socket.IO (evento 'historico').
-    // Si no llega en unos 400ms, fallback a /api/data/all
-    let historicalHandled = false;
-
-    const timeout = setTimeout(async () => {
-      if (!historicalHandled) {
-        console.log('⏳ No llegó evento "historico", uso /api/data/all como fallback');
-        try {
-          const res = await fetch('/api/data/all');
-          if(!res.ok) throw new Error('Error '+res.status);
-          let all = await res.json();
-          if (!Array.isArray(all)) {
-            console.log('⚠️ /api/data/all no devolvió un array');
-            return;
-          }
-          // aseguramos orden cronológico ascendente
-          all.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
-          applyHistoricalArray(all);
-        } catch(e) {
-          console.error('❌ Error fallback histórico:', e);
-        }
-      }
-    }, 400);
-
-    // Handler si llega por socket
-    socket.once('historico', (arr) => {
-      clearTimeout(timeout);
-      historicalHandled = true;
-      if (!arr || !Array.isArray(arr)) {
-        console.log('⚠️ Evento "historico" inválido o vacío');
-        return;
-      }
-      // ordenar ascendente por fecha (por si el servidor envió invertido)
-      arr.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
-      applyHistoricalArray(arr);
-    });
-
-  } catch(e) {
-    console.error('❌ Error cargando histórico:', e);
-  }
-}
-
-// aplica un array histórico al buffer y actualiza (sin alterar pausas de usuario)
-function applyHistoricalArray(all) {
-  try {
-    console.log('📥 Cargando históricos:', all.length, 'registros');
-
-    variables.forEach(v => {
-      dataBuffers[v].x = [];
-      dataBuffers[v].y = [];
-    });
-
+    const res = await fetch('/api/data/all');
+    if(!res.ok) throw new Error('Error '+res.status);
+    const all = await res.json();
+    if (!all || !Array.isArray(all)) return;
+    
+    variables.forEach(v => { dataBuffers[v].x = []; dataBuffers[v].y = []; });
+    
     all.forEach(rec => {
       const fecha = new Date(rec.fecha);
       variables.forEach(v => {
@@ -643,72 +222,31 @@ function applyHistoricalArray(all) {
           dataBuffers[v].y.push(rec[v]);
         }
       });
-
-      if (rec.latitud && rec.longitud) {
-        updateMap(rec.latitud, rec.longitud, rec.fecha);
-      }
+      if (rec.latitud && rec.longitud) updateMap(rec.latitud, rec.longitud, rec.fecha);
     });
-
-    // Redibujar todas las gráficas (solo si no están en pausa)
-    variables.forEach(v => {
-      if (!zoomStates[v].paused) updateChart(v);
-    });
-
-    console.log('✅ Históricos cargados correctamente');
+    
+    variables.forEach(v => updateChart(v));
   } catch(e) {
-    console.error('❌ Error aplicando históricos:', e);
+    console.error('❌ Error cargando histórico:', e);
   }
 }
 
-// ---- SOCKET.IO MEJORADO ----
-socket.on('connect', () => {
-  console.log('🔌 Socket conectado - Listo para datos MQTT en tiempo real');
-});
-
-socket.on('disconnect', () => {
-  console.log('🔌 Socket desconectado');
-});
-
-// Nuevo: si el servidor emite 'historico' lo manejamos en loadAllFromMongo() con socket.once
-
+// ---- SOCKET.IO ----
+socket.on('connect', () => console.log('🔌 Socket conectado'));
+socket.on('disconnect', () => console.log('🔌 Socket desconectado'));
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
-  
-  console.log('📥 Nuevo dato MQTT recibido:', data);
-
-  // ACTUALIZAR MAPA EN TIEMPO REAL
-  if(data.latitud && data.longitud){
-    updateMap(data.latitud, data.longitud, data.fecha);
-  }
-
-  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
+  if(data.latitud && data.longitud) updateMap(data.latitud, data.longitud, data.fecha);
   variables.forEach(v => {
-    if(data[v] !== undefined && data[v] !== null) {
-      pushPoint(v, fecha, data[v]);
-      console.log(`📈 ${v} actualizado: ${data[v]}`);
-    }
+    if(data[v] !== undefined && data[v] !== null) pushPoint(v, fecha, data[v]);
   });
 });
 
-// ---- VERIFICAR ELEMENTOS ----
-function verificarElementos() {
-  const elementos = ['map', 'btnHistoricos', 'graficaPlotly'];
-  elementos.forEach(id => {
-    const elemento = document.getElementById(id);
-    console.log(`${id}:`, elemento ? '✅ Encontrado' : '❌ No encontrado');
-  });
-}
-
-// ---- INICIO MEJORADO ----
+// ---- INICIO ----
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
-  
-  verificarElementos();
-  
   initMap();
   createCharts();
   await loadAllFromMongo();
-  
-  console.log('✅ Aplicación completamente inicializada');
-  console.log('📡 Esperando datos MQTT en tiempo real...');
+  console.log('✅ Aplicación lista, esperando datos MQTT...');
 })();
