@@ -1,332 +1,81 @@
-<!-- CONTENIDO METEOROLOGÍA -->
-<div id="meteoro-tab" class="tab-content">
-  <div class="container">
-    <!-- Indicadores de datos actuales -->
-    <div class="current-data">
-      <div class="data-card">
-        <div class="data-label">Temperatura Actual</div>
-        <div class="data-value" id="current-temp">-- °C</div>
-        <div class="data-label">Ambiente</div>
-      </div>
-      
-      <div class="data-card">
-        <div class="data-label">Velocidad del Viento</div>
-        <div class="data-value" id="current-wind">-- km/h</div>
-        <div class="data-label">Tiempo Real</div>
-      </div>
-      
-      <div class="data-card">
-        <div class="data-label">Humedad Ambiente</div>
-        <div class="data-value" id="current-humidity">-- %</div>
-        <div class="data-label">Relativa</div>
-      </div>
-      
-      <div class="data-card">
-        <div class="data-label">Direccion del Viento</div>
-        <div class="data-value" id="current-direction">--</div>
-        <div class="data-label">Rumbo actual</div>
-      </div>
-    </div>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Históricos — Panel de Sensores</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root{
+      --bg:#0b1d2a;
+      --card:#102a3c;
+      --accent:#00e5ff;
+      --muted:#1e3a4c;
+      --text:#eaf6f8;
+    }
+    html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
+    header{padding:12px 18px;text-align:center;color:var(--accent);}
+    .controls{padding:0 16px 8px 16px}
+    select {padding:6px;border-radius:6px;border:1px solid var(--muted);background:transparent;color:var(--text)}
+    table{width:95%;margin:14px auto 40px;background:var(--card);border-collapse:collapse;color:var(--text);border-radius:8px;overflow:hidden}
+    th,td{padding:10px;text-align:center;border-bottom:1px solid var(--muted)}
+    th{background:linear-gradient(90deg,#004d55,#007f8a);color:#004d55}
+    #pagination{padding:10px;text-align:center}
+    #pagination button{margin:2px;padding:6px 8px;border-radius:6px;border:none;background:var(--accent);cursor:pointer}
+  </style>
+</head>
+<body>
+  <header><h2> Históricos — Base de Datos</h2></header>
 
-    <!-- Grid principal: Gráficas y Brújula -->
-    <div class="dashboard-grid">
-      <!-- Gráfica de Temperatura -->
-      <div class="card">
-        <h3>Temperatura Ambiente</h3>
-        <div class="graph-container" id="temp-chart">
-          <div class="loading">Cargando grafica de temperatura...</div>
-        </div>
-      </div>
-      
-      <!-- Gráfica de Velocidad del Viento -->
-      <div class="card">
-        <h3>Velocidad del Viento</h3>
-        <div class="graph-container" id="wind-chart">
-          <div class="loading">Cargando grafica de viento...</div>
-        </div>
-      </div>
-      
-      <!-- Brújula/Rosa de los Vientos -->
-      <div class="card">
-        <h3>Direccion del Viento</h3>
-        <div class="compass-container">
-          <div class="compass">
-            <div class="compass-rose"></div>
-            <div class="compass-needle" id="wind-needle"></div>
-            <div class="compass-center"></div>
-            <div class="compass-directions">
-              <div class="direction-n">N</div>
-              <div class="direction-e">E</div>
-              <div class="direction-s">S</div>
-              <div class="direction-w">O</div>
-            </div>
-          </div>
-          <div style="margin-top: 20px; text-align: center;">
-            <div class="data-label">Direccion actual:</div>
-            <div class="data-value" id="wind-direction-text">Norte (0°)</div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Gráfica de Humedad -->
-      <div class="card">
-        <h3>Humedad Ambiente</h3>
-        <div class="graph-container" id="humidity-chart">
-          <div class="loading">Cargando grafica de humedad...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Información adicional (sin presión atmosférica) -->
-    <div class="card">
-      <h3>Resumen Meteorologico</h3>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-        <div class="data-card">
-          <div class="data-label">Maxima del dia</div>
-          <div class="data-value">-- °C</div>
-        </div>
-        <div class="data-card">
-          <div class="data-label">Minima del dia</div>
-          <div class="data-value">-- °C</div>
-        </div>
-        <div class="data-card">
-          <div class="data-label">Rafaga maxima</div>
-          <div class="data-value">-- km/h</div>
-        </div>
-        <div class="data-card">
-          <div class="data-label">Humedad promedio</div>
-          <div class="data-value">-- %</div>
-        </div>
-      </div>
-    </div>
+  <div class="controls">
+    <label for="tablaSelect" style="color:var(--accent)">Variable:</label>
+    <select id="tablaSelect">
+      <option value="temperatura">Temperatura</option>
+      <option value="humedad">Humedad</option>
+      <option value="conductividad">Conductividad</option>
+      <option value="ph">pH</option>
+      <option value="nitrogeno">Nitrógeno</option>
+      <option value="fosforo">Fósforo</option>
+      <option value="potasio">Potasio</option>
+      <option value="bateria">Batería</option>
+      <option value="corriente">Corriente</option>
+    </select>
   </div>
-</div>
 
-<script>
-  // Script para Meteorología - Mostrar datos en tiempo real
-  const socket = io();
-  
-  // Variables para almacenar datos meteorológicos
-  let windSpeedData = [];
-  let temperatureData = [];
-  let humidityData = [];
-  let timestamps = [];
-  const MAX_DATA_POINTS = 50;
+  <table id="dataTable">
+    <thead><tr><th>Fecha</th><th>Valor</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div id="pagination"></div>
 
-  // Inicializar gráficas meteorológicas
-  function initMeteoroCharts() {
-    // Gráfica de Temperatura
-    if (document.getElementById('temp-chart')) {
-      Plotly.newPlot('temp-chart', [{
-        x: timestamps,
-        y: temperatureData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#ff7043', width: 3 },
-        marker: { size: 4 },
-        name: 'Temperatura'
-      }], {
-        title: '',
-        plot_bgcolor: 'transparent',
-        paper_bgcolor: 'transparent',
-        font: { color: '#eaf6f8' },
-        xaxis: { gridcolor: '#1e3a4c', title: 'Tiempo' },
-        yaxis: { gridcolor: '#1e3a4c', title: 'Temperatura (°C)' },
-        margin: { t: 30, r: 30, b: 50, l: 50 }
-      });
-    }
-    
-    // Gráfica de Velocidad del Viento
-    if (document.getElementById('wind-chart')) {
-      Plotly.newPlot('wind-chart', [{
-        x: timestamps,
-        y: windSpeedData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#00e5ff', width: 3 },
-        marker: { size: 4 },
-        name: 'Velocidad del Viento'
-      }], {
-        title: '',
-        plot_bgcolor: 'transparent',
-        paper_bgcolor: 'transparent',
-        font: { color: '#eaf6f8' },
-        xaxis: { gridcolor: '#1e3a4c', title: 'Tiempo' },
-        yaxis: { gridcolor: '#1e3a4c', title: 'Velocidad (km/h)' },
-        margin: { t: 30, r: 30, b: 50, l: 50 }
-      });
-    }
-    
-    // Gráfica de Humedad
-    if (document.getElementById('humidity-chart')) {
-      Plotly.newPlot('humidity-chart', [{
-        x: timestamps,
-        y: humidityData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#4ecdc4', width: 3 },
-        marker: { size: 4 },
-        name: 'Humedad'
-      }], {
-        title: '',
-        plot_bgcolor: 'transparent',
-        paper_bgcolor: 'transparent',
-        font: { color: '#eaf6f8' },
-        xaxis: { gridcolor: '#1e3a4c', title: 'Tiempo' },
-        yaxis: { gridcolor: '#1e3a4c', title: 'Humedad (%)' },
-        margin: { t: 30, r: 30, b: 50, l: 50 }
-      });
-    }
+  <script>
+  const socket=io();
+  let allData=[],currentPage=1;
+  const recordsPerPage=20;
+
+  function renderTable(){
+    const key=document.getElementById('tablaSelect').value;
+    const tbody=document.querySelector('#dataTable tbody');
+    const totalPages=Math.ceil(allData.length/recordsPerPage)||1;
+    const start=(currentPage-1)*recordsPerPage,end=start+recordsPerPage;
+    const slice=allData.slice(start,end);
+    tbody.innerHTML=slice.map(d=>{
+      let val=d[key];if(val===undefined){for(const k in d){if(k.toLowerCase()===key.toLowerCase()){val=d[k];break;}}}
+      if(typeof val==='number') val=val.toFixed(3);
+      return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val??''}</td></tr>`;
+    }).join('');
+    const pag=document.getElementById('pagination');
+    pag.innerHTML='';for(let i=1;i<=totalPages;i++){const b=document.createElement('button');b.textContent=i;b.disabled=i===currentPage;b.onclick=()=>{currentPage=i;renderTable();};pag.appendChild(b);}
   }
 
-  // Actualizar datos meteorológicos en tiempo real
-  function updateMeteoroData(data) {
-    if (!data) return;
-    
-    const now = new Date();
-    const timeString = now.toLocaleTimeString();
-    
-    console.log('📡 Datos recibidos para meteorología:', {
-      temperatura: data.temperatura,
-      vel_viento: data.vel_viento,
-      humedad: data.humedad
-    });
-    
-    // Agregar nuevos datos
-    timestamps.push(timeString);
-    temperatureData.push(data.temperatura || 0);
-    windSpeedData.push(data.vel_viento || 0);
-    humidityData.push(data.humedad || 0);
-    
-    // Limitar el número de puntos de datos
-    if (timestamps.length > MAX_DATA_POINTS) {
-      timestamps.shift();
-      temperatureData.shift();
-      windSpeedData.shift();
-      humidityData.shift();
-    }
-    
-    // Actualizar indicadores actuales
-    document.getElementById('current-temp').textContent = `${(data.temperatura || 0).toFixed(1)} °C`;
-    document.getElementById('current-wind').textContent = `${(data.vel_viento || 0).toFixed(1)} km/h`;
-    document.getElementById('current-humidity').textContent = `${(data.humedad || 0).toFixed(0)} %`;
-    
-    // Actualizar dirección del viento (simulada por ahora)
-    const windDirection = Math.floor(Math.random() * 360); // Simulado hasta que tengas el dato real
-    updateWindDirection(windDirection);
-    
-    // Actualizar gráficas
-    updateMeteoroCharts();
+  async function loadAll(){
+    const res=await fetch('/api/data/all');const json=await res.json();
+    allData=json.map(d=>({...d,fecha:new Date(d.fecha)})).sort((a,b)=>b.fecha-a.fecha);
+    renderTable();
   }
 
-  // Actualizar gráficas meteorológicas
-  function updateMeteoroCharts() {
-    // Actualizar gráfica de temperatura
-    if (document.getElementById('temp-chart') && timestamps.length > 0) {
-      Plotly.react('temp-chart', [{
-        x: timestamps,
-        y: temperatureData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#ff7043', width: 3 },
-        marker: { size: 4 },
-        name: 'Temperatura'
-      }], {
-        xaxis: { range: [timestamps[0], timestamps[timestamps.length - 1]] }
-      });
-    }
-    
-    // Actualizar gráfica de velocidad del viento
-    if (document.getElementById('wind-chart') && timestamps.length > 0) {
-      Plotly.react('wind-chart', [{
-        x: timestamps,
-        y: windSpeedData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#00e5ff', width: 3 },
-        marker: { size: 4 },
-        name: 'Velocidad del Viento'
-      }], {
-        xaxis: { range: [timestamps[0], timestamps[timestamps.length - 1]] }
-      });
-    }
-    
-    // Actualizar gráfica de humedad
-    if (document.getElementById('humidity-chart') && timestamps.length > 0) {
-      Plotly.react('humidity-chart', [{
-        x: timestamps,
-        y: humidityData,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: '#4ecdc4', width: 3 },
-        marker: { size: 4 },
-        name: 'Humedad'
-      }], {
-        xaxis: { range: [timestamps[0], timestamps[timestamps.length - 1]] }
-      });
-    }
-  }
-
-  // Actualizar brújula de dirección del viento
-  function updateWindDirection(degrees) {
-    const needle = document.getElementById('wind-needle');
-    const directionText = document.getElementById('wind-direction-text');
-    
-    if (!needle || !directionText) return;
-    
-    needle.style.transform = `translate(-50%, -50%) rotate(${degrees}deg)`;
-    
-    // Convertir grados a dirección cardinal
-    const directions = ['Norte', 'Noreste', 'Este', 'Sureste', 'Sur', 'Suroeste', 'Oeste', 'Noroeste'];
-    const index = Math.round(degrees / 45) % 8;
-    directionText.textContent = `${directions[index]} (${degrees}°)`;
-  }
-
-  // Escuchar datos del servidor
-  socket.on('nuevoDato', function(data) {
-    console.log('📡 Dato MQTT recibido en meteorología:', {
-      temperatura: data.temperatura,
-      vel_viento: data.vel_viento,
-      humedad: data.humedad
-    });
-    updateMeteoroData(data);
-  });
-
-  // Inicializar cuando se active la pestaña de Meteorología
-  function initMeteorologia() {
-    console.log('🌤️ Inicializando estación meteorológica...');
-    // Inicializar con datos vacíos
-    initMeteoroCharts();
-    
-    // Cargar algunos datos históricos iniciales (opcional)
-    setTimeout(() => {
-      // Simular algunos datos iniciales para que las gráficas no estén vacías
-      for (let i = 0; i < 5; i++) {
-        const mockData = {
-          temperatura: 25 + Math.random() * 10,
-          vel_viento: Math.random() * 5, // Velocidades bajas como en tus logs
-          humedad: 60 + Math.random() * 20 // Humedad entre 60-80%
-        };
-        updateMeteoroData(mockData);
-      }
-    }, 500);
-  }
-
-  // Inicializar cuando la pestaña esté activa
-  if (document.getElementById('meteoro-tab')) {
-    // Verificar si estamos en la pestaña de Meteorología
-    const meteoroTab = document.getElementById('meteoro-tab');
-    if (meteoroTab.classList.contains('active')) {
-      initMeteorologia();
-    }
-    
-    // También inicializar cuando se cambie a esta pestaña
-    window.switchTab = function(tabName) {
-      // ... (tu código existente de switchTab)
-      
-      if (tabName === 'meteoro') {
-        setTimeout(initMeteorologia, 100);
-      }
-    }
-  }
-</script>
+  document.getElementById('tablaSelect').onchange=()=>{currentPage=1;renderTable();};
+  loadAll();
+  </script>
+</body>
+</html>
