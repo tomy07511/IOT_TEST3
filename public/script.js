@@ -28,17 +28,14 @@ variables.forEach(v => {
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  // Verificar si el mapa ya existe
   let mapContainer = document.getElementById('map');
   if (!mapContainer) {
     console.log('❌ Contenedor del mapa no encontrado');
     return;
   }
   
-  // Limpiar el contenedor del mapa
   mapContainer.innerHTML = '';
   
-  // Crear elemento interno para el mapa
   const mapInner = document.createElement('div');
   mapInner.id = 'map-inner';
   mapInner.style.width = '100%';
@@ -47,7 +44,6 @@ function initMap(){
   
   mapContainer.appendChild(mapInner);
   
-  // Inicializar el mapa
   map = L.map('map-inner').setView([4.65, -74.1], 12);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -71,14 +67,9 @@ function updateMap(latitud, longitud, fecha) {
   
   if (latitud && longitud) {
     const newLatLng = [latitud, longitud];
-    
-    // Actualizar marcador
     marker.setLatLng(newLatLng);
-    
-    // Mover el mapa suavemente a la nueva ubicación
     map.setView(newLatLng, 14);
     
-    // Actualizar popup con información
     const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
     marker.bindPopup(`
       <div style="text-align: center;">
@@ -109,7 +100,6 @@ function createChartControls(varName, container) {
     flex-wrap: wrap;
   `;
   
-  // Título
   const title = document.createElement('span');
   title.textContent = varName;
   title.style.cssText = `
@@ -120,7 +110,6 @@ function createChartControls(varName, container) {
     font-size: 14px;
   `;
   
-  // Controles de Zoom X
   const zoomXDiv = document.createElement('div');
   zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   
@@ -146,7 +135,6 @@ function createChartControls(varName, container) {
   zoomXValue.textContent = '50%';
   zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
-  // Controles de Zoom Y
   const zoomYDiv = document.createElement('div');
   zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   
@@ -172,7 +160,6 @@ function createChartControls(varName, container) {
   zoomYValue.textContent = '50%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
-  // Botones
   const buttonsDiv = document.createElement('div');
   buttonsDiv.style.cssText = `display: flex; gap: 10px;`;
   
@@ -208,7 +195,6 @@ function createChartControls(varName, container) {
     min-width: 80px;
   `;
   
-  // Efectos hover para botones
   [btnActuales, btnReset].forEach(btn => {
     btn.addEventListener('mouseenter', () => {
       btn.style.background = '#00e5ff';
@@ -223,7 +209,6 @@ function createChartControls(varName, container) {
     });
   });
   
-  // Event listeners para sliders con actualización visual
   function updateSliderBackground(slider, value) {
     const min = parseInt(slider.min);
     const max = parseInt(slider.max);
@@ -245,15 +230,12 @@ function createChartControls(varName, container) {
     applyMultiplierZoom(varName, 'y', sliderValue / 50);
   });
   
-  // Inicializar fondos de sliders
   updateSliderBackground(zoomXSlider, 50);
   updateSliderBackground(zoomYSlider, 50);
   
-  // Event listeners para botones
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
-  // Ensamblar controles
   zoomXDiv.appendChild(zoomXLabel);
   zoomXDiv.appendChild(zoomXSlider);
   zoomXDiv.appendChild(zoomXValue);
@@ -401,19 +383,16 @@ function updateSliderBackground(slider, value) {
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   
-  // Validaciones robustas
   if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
     console.log(`⚠️ No hay datos para ${varName}`);
     return;
   }
   
-  // Verificar que la gráfica existe y está lista
   if (!charts[varName] || !charts[varName].div) {
     console.log(`⚠️ Gráfica de ${varName} no está lista`);
     return;
   }
   
-  // Tomar últimos 15 datos (o menos si no hay suficientes)
   const dataCount = buf.x.length;
   const pointsToShow = Math.min(15, dataCount);
   
@@ -425,7 +404,6 @@ function zoomToLatest(varName) {
   const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
   const lastValues = buf.y.slice(-pointsToShow);
   
-  // Validar que las fechas sean válidas
   const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
   const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
   
@@ -434,13 +412,11 @@ function zoomToLatest(varName) {
     return;
   }
   
-  // Calcular rangos con padding
   const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
   const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
   const minY = Math.min(...validValues);
   const maxY = Math.max(...validValues);
   
-  // Agregar padding para mejor visualización
   const timeRange = maxX.getTime() - minX.getTime();
   const valueRange = maxY - minY;
   
@@ -449,7 +425,6 @@ function zoomToLatest(varName) {
   const paddedMinY = minY - valueRange * 0.1;
   const paddedMaxY = maxY + valueRange * 0.1;
   
-  // Aplicar zoom solo si los rangos son válidos
   if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
       !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
     
@@ -461,8 +436,6 @@ function zoomToLatest(varName) {
     });
     
     console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
-    console.log(`📊 Rango X: ${paddedMinX.toLocaleTimeString()} - ${paddedMaxX.toLocaleTimeString()}`);
-    console.log(`📈 Rango Y: ${paddedMinY.toFixed(2)} - ${paddedMaxY.toFixed(2)}`);
     
   } else {
     console.log(`❌ Rangos inválidos para ${varName}`);
@@ -487,7 +460,7 @@ function resetZoom(varName) {
   }, 100);
 }
 
-// ---- ACTUALIZAR GRÁFICA CON PUNTOS ----
+// ---- ACTUALIZAR GRÁFICA CON PUNTOS (CORREGIDA) ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
@@ -497,7 +470,6 @@ function updateChart(varName) {
     y: buf.y[i]
   })).sort((a, b) => a.x - b.x);
   
-  // Determinar el modo basado en la cantidad de datos
   const dataCount = combined.length;
   const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
   const markerSize = dataCount <= 30 ? 6 : 0;
@@ -518,7 +490,8 @@ function updateChart(varName) {
     connectgaps: false
   };
   
-  Plotly.react(charts[varName].div, [trace], charts[v].layout, charts[v].config);
+  // CORRECCIÓN: Usar charts[varName] en lugar de charts[v]
+  Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
   
   console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
@@ -616,7 +589,6 @@ async function loadAllFromMongo(){
         }
       });
       
-      // Actualizar mapa con el último dato histórico que tenga coordenadas
       if (rec.latitud && rec.longitud) {
         updateMap(rec.latitud, rec.longitud, rec.fecha);
       }
@@ -647,12 +619,10 @@ socket.on('nuevoDato', data => {
   
   console.log('📥 Nuevo dato MQTT recibido:', data);
 
-  // ACTUALIZAR MAPA EN TIEMPO REAL
   if(data.latitud && data.longitud){
     updateMap(data.latitud, data.longitud, data.fecha);
   }
 
-  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
@@ -674,16 +644,10 @@ function verificarElementos() {
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
   
-  // Verificar elementos existentes
   verificarElementos();
   
-  // 1. Inicializar mapa
   initMap();
-  
-  // 2. Crear gráficas
   createCharts();
-  
-  // 3. Cargar datos históricos
   await loadAllFromMongo();
   
   console.log('✅ Aplicación completamente inicializada');
