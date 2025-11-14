@@ -9,11 +9,15 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-const MAX_POINTS = 5000;
+const MAX_POINTS = 1000; // Reducido para mejor rendimiento
+const MAX_INITIAL_POINTS = 100; // Solo 100 puntos iniciales
+const CHUNK_SIZE = 500; // Para carga progresiva
 const dataBuffers = {};
 const charts = {};
 const zoomStates = {};
-const autoScrollStates = {}; // Estado individual por gráfica
+const autoScrollStates = {};
+let isInitialLoad = true;
+let isLoadingHistorical = false;
 
 // Inicializar estados
 variables.forEach(v => {
@@ -25,8 +29,56 @@ variables.forEach(v => {
     centerX: null,
     centerY: null
   };
-  autoScrollStates[v] = true; // Auto-scroll activado por defecto para cada gráfica
+  autoScrollStates[v] = true;
 });
+
+// ---- INDICADOR DE CARGA ----
+function createLoadingIndicator() {
+  const loadingDiv = document.createElement('div');
+  loadingDiv.id = 'loading-indicator';
+  loadingDiv.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--card);
+    padding: 20px;
+    border-radius: 8px;
+    border: 2px solid var(--accent);
+    z-index: 1001;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  `;
+  
+  loadingDiv.innerHTML = `
+    <div style="color: var(--accent); margin-bottom: 10px; font-weight: bold;">🔄 Cargando datos...</div>
+    <div style="color: var(--text); font-size: 12px;" id="loading-text">Inicializando aplicación</div>
+    <div style="margin-top: 10px; width: 100%; height: 4px; background: var(--muted); border-radius: 2px;">
+      <div id="loading-progress" style="width: 0%; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s;"></div>
+    </div>
+  `;
+  
+  document.body.appendChild(loadingDiv);
+  return loadingDiv;
+}
+
+function updateLoadingText(text, progress = 0) {
+  const loadingText = document.getElementById('loading-text');
+  const loadingProgress = document.getElementById('loading-progress');
+  if (loadingText) loadingText.textContent = text;
+  if (loadingProgress) loadingProgress.style.width = progress + '%';
+}
+
+function hideLoadingIndicator() {
+  const loadingDiv = document.getElementById('loading-indicator');
+  if (loadingDiv) {
+    loadingDiv.style.opacity = '0';
+    loadingDiv.style.transition = 'opacity 0.5s';
+    setTimeout(() => {
+      if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
+    }, 500);
+  }
+}
 
 // ---- TOGGLE AUTO-SCROLL INDIVIDUAL ----
 function toggleAutoScroll(varName) {
@@ -38,7 +90,6 @@ function toggleAutoScroll(varName) {
     btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
     btn.style.color = autoScrollStates[varName] ? '#002' : '#fff';
   }
-  console.log(`Auto-scroll ${varName}: ${autoScrollStates[varName] ? 'activado' : 'desactivado'}`);
 }
 
 // ---- AUTO-SCROLL A ÚLTIMOS DATOS ----
@@ -124,8 +175,6 @@ function updateMap(latitud, longitud, fecha) {
         <small>${fechaStr}</small>
       </div>
     `).openPopup();
-    
-    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
   }
 }
 
@@ -457,7 +506,7 @@ function updateSliderBackground(slider, value) {
   slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS (MEJORADA) ----
+// ---- ZOOM A ÚLTIMOS DATOS ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   
@@ -513,8 +562,6 @@ function zoomToLatest(varName) {
       'yaxis.autorange': false
     });
     
-    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
-    
   } else {
     console.log(`❌ Rangos inválidos para ${varName}`);
   }
@@ -538,26 +585,39 @@ function resetZoom(varName) {
   }, 100);
 }
 
-// ---- ACTUALIZAR GRÁFICA CON PUNTOS ----
+// ---- ACTUALIZAR GRÁFICA OPTIMIZADA ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
-  const combined = buf.x.map((x, i) => ({ 
-    x: new Date(x), 
-    y: buf.y[i]
-  })).sort((a, b) => a.x - b.x);
+  // Limitar puntos para mejor rendimiento
+  let displayDataX, displayDataY;
   
+  if (buf.x.length > MAX_POINTS) {
+    // Sampleado para muchos puntos
+    const step = Math.ceil(buf.x.length / MAX_POINTS);
+    displayDataX = buf.x.filter((_, index) => index % step === 0);
+    displayDataY = buf.y.filter((_, index) => index % step === 0);
+  } else {
+    displayDataX = buf.x;
+    displayDataY = buf.y;
+  }
+  
+  const combined = displayDataX.map((x, i) => ({ 
+    x: new Date(x), 
+    y: displayDataY[i]
+  })).sort((a, b) => a.x - b.x);
+
   const dataCount = combined.length;
   const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
-  const markerSize = dataCount <= 30 ? 6 : 0;
-  
+  const markerSize = dataCount <= 30 ? 4 : 0;
+
   const trace = {
     x: combined.map(d => d.x),
     y: combined.map(d => d.y),
     type: 'scatter',
     mode: mode,
-    line: { color: colorMap[varName], width: 2 },
+    line: { color: colorMap[varName], width: 1.5 },
     marker: {
       size: markerSize,
       color: colorMap[varName],
@@ -569,8 +629,6 @@ function updateChart(varName) {
   };
   
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
-  
-  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
 
 // ---- CREAR GRAFICAS ----
@@ -582,9 +640,9 @@ function createCharts(){
       container = document.createElement('div');
       container.id = divId;
       container.style.width = '100%';
-      container.style.height = '380px';
-      container.style.marginBottom = '25px';
-      container.style.padding = '15px';
+      container.style.height = '350px'; // Reducida para mejor rendimiento
+      container.style.marginBottom = '20px';
+      container.style.padding = '12px';
       container.style.background = '#071923';
       container.style.borderRadius = '8px';
       container.style.border = '1px solid #0f3a45';
@@ -615,13 +673,149 @@ function createCharts(){
       config: {
         responsive: true,
         displayModeBar: true,
-        displaylogo: false
+        displaylogo: false,
+        modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'] // Remover herramientas pesadas
       }
     };
 
     Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
     setupPlotlyZoomListener(v);
   });
+}
+
+// ---- CARGAR DATOS INICIALES OPTIMIZADOS ----
+async function loadInitialData() {
+  try {
+    updateLoadingText('Cargando datos iniciales...', 30);
+    console.log('📥 Cargando datos iniciales optimizados...');
+    
+    const res = await fetch('/api/data/latest');
+    if (!res.ok) throw new Error('Error ' + res.status);
+    
+    const latestData = await res.json();
+    
+    if (!Array.isArray(latestData)) {
+      console.log('⚠️ No se recibieron datos iniciales');
+      return;
+    }
+    
+    console.log('📊 Datos iniciales cargados:', latestData.length, 'registros');
+    
+    // Limpiar buffers
+    variables.forEach(v => {
+      dataBuffers[v].x = [];
+      dataBuffers[v].y = [];
+    });
+
+    // Procesar datos iniciales
+    latestData.forEach(rec => {
+      const fecha = new Date(rec.fecha);
+      variables.forEach(v => {
+        if (rec[v] !== undefined && rec[v] !== null) {
+          dataBuffers[v].x.push(fecha);
+          dataBuffers[v].y.push(rec[v]);
+        }
+      });
+      
+      if (rec.latitud && rec.longitud) {
+        updateMap(rec.latitud, rec.longitud, rec.fecha);
+      }
+    });
+
+    updateLoadingText('Actualizando gráficas...', 70);
+    
+    // Actualizar gráficas con datos iniciales
+    variables.forEach(v => {
+      updateChart(v);
+    });
+    
+    console.log('✅ Carga inicial completada');
+    isInitialLoad = false;
+    
+    // Cargar el resto de datos en segundo plano
+    setTimeout(loadHistoricalDataBackground, 500);
+    
+  } catch (e) {
+    console.error('❌ Error en carga inicial:', e);
+    updateLoadingText('Error cargando datos', 0);
+  }
+}
+
+// ---- CARGA EN SEGUNDO PLANO ----
+async function loadHistoricalDataBackground() {
+  if (isLoadingHistorical) return;
+  
+  isLoadingHistorical = true;
+  try {
+    console.log('🔄 Cargando datos históricos en background...');
+    
+    let page = 1;
+    let hasMoreData = true;
+    let totalLoaded = 0;
+
+    while (hasMoreData && totalLoaded < 5000) { // Máximo 5000 puntos
+      updateLoadingText(`Cargando datos históricos... (${totalLoaded})`, 80 + (page * 2));
+      
+      const res = await fetch(`/api/data/all?page=${page}&limit=${CHUNK_SIZE}`);
+      if (!res.ok) break;
+      
+      const result = await res.json();
+      
+      if (!result.data || result.data.length === 0) {
+        hasMoreData = false;
+        break;
+      }
+
+      // Procesar chunk de datos
+      result.data.forEach(rec => {
+        const fecha = new Date(rec.fecha);
+        variables.forEach(v => {
+          if (rec[v] !== undefined && rec[v] !== null) {
+            // Evitar duplicados
+            const fechaStr = fecha.getTime();
+            if (!dataBuffers[v].x.includes(fechaStr)) {
+              dataBuffers[v].x.push(fechaStr);
+              dataBuffers[v].y.push(rec[v]);
+            }
+          }
+        });
+      });
+
+      totalLoaded += result.data.length;
+      console.log(`📦 Chunk ${page} cargado: ${result.data.length} registros`);
+      
+      // Actualizar gráficas progresivamente cada 3 chunks
+      if (page % 3 === 0) {
+        variables.forEach(v => {
+          updateChart(v);
+        });
+      }
+      
+      page++;
+      
+      // Pequeña pausa para no sobrecargar
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    // Actualización final de todas las gráficas
+    variables.forEach(v => {
+      if (dataBuffers[v].x.length > 0) {
+        updateChart(v);
+      }
+    });
+    
+    console.log(`✅ Carga histórica completada: ${totalLoaded} registros totales`);
+    
+  } catch (e) {
+    console.error('❌ Error en carga background:', e);
+  } finally {
+    isLoadingHistorical = false;
+  }
+}
+
+// ---- REEMPLAZAR loadAllFromMongo ----
+async function loadAllFromMongo(){
+  await loadInitialData();
 }
 
 // ---- ACTUALIZAR DATOS EN TIEMPO REAL ----
@@ -640,50 +834,6 @@ function pushPoint(varName, fecha, value){
   // AUTO-SCROLL INDIVIDUAL POR GRÁFICA
   if (autoScrollStates[varName]) {
     autoScrollToLatest(varName);
-  }
-}
-
-// ---- CARGAR HISTORICO COMPLETO ----
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const all = await res.json();
-    
-    if (!all || !Array.isArray(all)) {
-      console.log('⚠️ No se recibieron datos históricos');
-      return;
-    }
-    
-    console.log('📥 Cargando históricos:', all.length, 'registros');
-    
-    variables.forEach(v => {
-      dataBuffers[v].x = [];
-      dataBuffers[v].y = [];
-    });
-
-    all.forEach(rec => {
-      const fecha = new Date(rec.fecha);
-      variables.forEach(v => {
-        if(rec[v] !== undefined && rec[v] !== null){
-          dataBuffers[v].x.push(fecha);
-          dataBuffers[v].y.push(rec[v]);
-        }
-      });
-      
-      if (rec.latitud && rec.longitud) {
-        updateMap(rec.latitud, rec.longitud, rec.fecha);
-      }
-    });
-
-    variables.forEach(v => {
-      updateChart(v);
-    });
-
-    console.log('✅ Históricos cargados correctamente');
-
-  } catch(e) {
-    console.error('❌ Error cargando histórico:', e);
   }
 }
 
@@ -741,7 +891,7 @@ function updateStatus(connected) {
   }
 }
 
-// ---- SOCKET.IO MEJORADO ----
+// ---- SOCKET.IO ----
 socket.on('connect', () => {
   console.log('🔌 Socket conectado - Listo para datos MQTT en tiempo real');
   updateStatus(true);
@@ -764,7 +914,6 @@ socket.on('nuevoDato', data => {
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
-      console.log(`📈 ${v} actualizado: ${data[v]}`);
     }
   });
 });
@@ -778,18 +927,29 @@ function verificarElementos() {
   });
 }
 
-// ---- INICIO MEJORADO ----
+// ---- INICIO OPTIMIZADO ----
 (async function init(){
-  console.log('🚀 Iniciando aplicación...');
+  console.log('🚀 Iniciando aplicación optimizada...');
   
   createStatusIndicator();
+  const loadingIndicator = createLoadingIndicator();
   
+  updateLoadingText('Inicializando componentes...', 10);
   verificarElementos();
   
+  updateLoadingText('Cargando mapa...', 20);
   initMap();
-  createCharts();
-  await loadAllFromMongo();
   
-  console.log('✅ Aplicación completamente inicializada');
-  console.log('📡 Esperando datos MQTT en tiempo real...');
+  updateLoadingText('Creando gráficas...', 40);
+  createCharts();
+  
+  updateLoadingText('Cargando datos iniciales...', 60);
+  await loadInitialData();
+  
+  updateLoadingText('Completando configuración...', 90);
+  setTimeout(() => {
+    hideLoadingIndicator();
+    console.log('✅ Aplicación optimizada completamente inicializada');
+  }, 500);
+  
 })();
