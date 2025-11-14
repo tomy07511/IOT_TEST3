@@ -13,20 +13,27 @@ const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
 const zoomStates = {};
-variables.forEach(v=>{
-  dataBuffers[v] = {x:[],y:[]};
-  zoomStates[v] = { x: 50, y: 50 }; // 50% al inicio
+
+variables.forEach(v => {
+  dataBuffers[v] = {x: [], y: []};
+  zoomStates[v] = {
+    baseRange: null,      // Rango base actual (centro y tamaño)
+    zoomX: 1.0,           // Multiplicador de zoom X (1.0 = normal)
+    zoomY: 1.0,           // Multiplicador de zoom Y (1.0 = normal)
+    centerX: null,        // Centro actual en X
+    centerY: null         // Centro actual en Y
+  };
 });
 
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  map = L.map('map').setView([4.65,-74.1],12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-  marker = L.marker([4.65,-74.1]).addTo(map).bindPopup('Esperando datos GPS...');
+  map = L.map('map').setView([4.65, -74.1], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+  marker = L.marker([4.65, -74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES CON SLIDERS ----
+// ---- CONTROLES CON SLIDERS COMO MULTIPLICADORES ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
@@ -61,9 +68,9 @@ function createChartControls(varName, container) {
   
   const zoomXSlider = document.createElement('input');
   zoomXSlider.type = 'range';
-  zoomXSlider.min = '10';
-  zoomXSlider.max = '100';
-  zoomXSlider.value = '50';
+  zoomXSlider.min = '25';
+  zoomXSlider.max = '400';
+  zoomXSlider.value = '100';
   zoomXSlider.style.cssText = `
     flex: 1;
     height: 6px;
@@ -73,7 +80,7 @@ function createChartControls(varName, container) {
   `;
   
   const zoomXValue = document.createElement('span');
-  zoomXValue.textContent = '50%';
+  zoomXValue.textContent = '100%';
   zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
   
   // Controles de Zoom Y
@@ -86,9 +93,9 @@ function createChartControls(varName, container) {
   
   const zoomYSlider = document.createElement('input');
   zoomYSlider.type = 'range';
-  zoomYSlider.min = '10';
-  zoomYSlider.max = '100';
-  zoomYSlider.value = '50';
+  zoomYSlider.min = '25';
+  zoomYSlider.max = '400';
+  zoomYSlider.value = '100';
   zoomYSlider.style.cssText = `
     flex: 1;
     height: 6px;
@@ -98,7 +105,7 @@ function createChartControls(varName, container) {
   `;
   
   const zoomYValue = document.createElement('span');
-  zoomYValue.textContent = '50%';
+  zoomYValue.textContent = '100%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
   
   // Botones
@@ -133,22 +140,20 @@ function createChartControls(varName, container) {
   
   // Event listeners para sliders
   zoomXSlider.addEventListener('input', (e) => {
-    const value = e.target.value;
-    zoomXValue.textContent = value + '%';
-    zoomStates[varName].x = parseInt(value);
-    applyZoom(varName);
+    const sliderValue = parseInt(e.target.value);
+    zoomXValue.textContent = sliderValue + '%';
+    applyMultiplierZoom(varName, 'x', sliderValue / 100);
   });
   
   zoomYSlider.addEventListener('input', (e) => {
-    const value = e.target.value;
-    zoomYValue.textContent = value + '%';
-    zoomStates[varName].y = parseInt(value);
-    applyZoom(varName);
+    const sliderValue = parseInt(e.target.value);
+    zoomYValue.textContent = sliderValue + '%';
+    applyMultiplierZoom(varName, 'y', sliderValue / 100);
   });
   
   // Event listeners para botones
-  btnActuales.addEventListener('click', () => zoomToLatest(varName));
-  btnReset.addEventListener('click', () => resetZoom(varName));
+  btnActuales.addEventListener('click', () => zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue));
+  btnReset.addEventListener('click', () => resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue));
   
   // Ensamblar controles
   zoomXDiv.appendChild(zoomXLabel);
@@ -168,56 +173,142 @@ function createChartControls(varName, container) {
   controlsDiv.appendChild(buttonsDiv);
   
   container.parentNode.insertBefore(controlsDiv, container);
+  
+  return { zoomXSlider, zoomXValue, zoomYSlider, zoomYValue };
 }
 
-// ---- APLICAR ZOOM CON SLIDERS ----
-function applyZoom(varName) {
-  const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
+// ---- APLICAR ZOOM COMO MULTIPLICADOR ----
+function applyMultiplierZoom(varName, axis, multiplier) {
+  const state = zoomStates[varName];
   
-  const zoom = zoomStates[varName];
+  // Si no tenemos baseRange, establecerla desde el rango actual
+  if (!state.baseRange) {
+    updateBaseRange(varName);
+  }
   
-  // Obtener rango completo de datos
-  const allDates = buf.x.map(x => new Date(x).getTime());
-  const allValues = buf.y;
+  if (!state.baseRange) return;
   
-  const minTime = Math.min(...allDates);
-  const maxTime = Math.max(...allDates);
-  const minValue = Math.min(...allValues);
-  const maxValue = Math.max(...allValues);
+  // Actualizar el multiplicador
+  if (axis === 'x') {
+    state.zoomX = multiplier;
+  } else {
+    state.zoomY = multiplier;
+  }
   
-  const fullTimeRange = maxTime - minTime;
-  const fullValueRange = maxValue - minValue;
+  // Aplicar el zoom combinado
+  applyCombinedZoom(varName);
+}
+
+// ---- APLICAR ZOOM COMBINADO (BASE + MULTIPLICADORES) ----
+function applyCombinedZoom(varName) {
+  const state = zoomStates[varName];
+  const base = state.baseRange;
   
-  // Calcular rangos visibles basados en sliders (50% = rango completo)
-  const visibleTimeRange = fullTimeRange * (100 / zoom.x);
-  const visibleValueRange = fullValueRange * (100 / zoom.y);
+  if (!base) return;
   
-  const centerTime = (minTime + maxTime) / 2;
-  const centerValue = (minValue + maxValue) / 2;
+  // Calcular nuevos rangos aplicando los multiplicadores
+  const visibleRangeX = (base.x[1] - base.x[0]) / state.zoomX;
+  const visibleRangeY = (base.y[1] - base.y[0]) / state.zoomY;
   
-  const visibleMinTime = centerTime - visibleTimeRange / 2;
-  const visibleMaxTime = centerTime + visibleTimeRange / 2;
-  const visibleMinValue = centerValue - visibleValueRange / 2;
-  const visibleMaxValue = centerValue + visibleValueRange / 2;
+  const centerX = state.centerX || (base.x[0] + base.x[1]) / 2;
+  const centerY = state.centerY || (base.y[0] + base.y[1]) / 2;
   
-  // Aplicar zoom
+  const newMinX = centerX - visibleRangeX / 2;
+  const newMaxX = centerX + visibleRangeX / 2;
+  const newMinY = centerY - visibleRangeY / 2;
+  const newMaxY = centerY + visibleRangeY / 2;
+  
+  // Aplicar a la gráfica
   Plotly.relayout(charts[varName].div, {
-    'xaxis.range': [new Date(visibleMinTime), new Date(visibleMaxTime)],
-    'yaxis.range': [visibleMinValue, visibleMaxValue],
+    'xaxis.range': [new Date(newMinX), new Date(newMaxX)],
+    'yaxis.range': [newMinY, newMaxY],
     'xaxis.autorange': false,
     'yaxis.autorange': false
   });
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS ----
-function zoomToLatest(varName) {
+// ---- ACTUALIZAR RANGO BASE (cuando el usuario hace zoom manual) ----
+function updateBaseRange(varName) {
+  const graphDiv = charts[varName].div;
+  const layout = graphDiv.layout;
   const buf = dataBuffers[varName];
+  
   if (buf.x.length === 0) return;
   
-  // Cambiar sliders para zoom cercano
-  zoomStates[varName].x = 20; // Zoom más cercano en X
-  zoomStates[varName].y = 80; // Poco zoom en Y
+  let baseX, baseY;
+  
+  if (layout.xaxis.range) {
+    // Si hay zoom manual, usar ese como base
+    const [minX, maxX] = layout.xaxis.range;
+    baseX = [new Date(minX).getTime(), new Date(maxX).getTime()];
+    
+    // Guardar el centro actual
+    zoomStates[varName].centerX = (baseX[0] + baseX[1]) / 2;
+  } else {
+    // Si no hay zoom, usar todo el rango de datos
+    const allDates = buf.x.map(x => new Date(x).getTime());
+    baseX = [Math.min(...allDates), Math.max(...allDates)];
+  }
+  
+  if (layout.yaxis.range) {
+    // Si hay zoom manual, usar ese como base
+    baseY = layout.yaxis.range;
+    
+    // Guardar el centro actual
+    zoomStates[varName].centerY = (baseY[0] + baseY[1]) / 2;
+  } else {
+    // Si no hay zoom, usar todo el rango de datos
+    baseY = [Math.min(...buf.y), Math.max(...buf.y)];
+  }
+  
+  if (baseX && baseY) {
+    zoomStates[varName].baseRange = { x: baseX, y: baseY };
+    
+    // Resetear multiplicadores cuando cambia la base
+    zoomStates[varName].zoomX = 1.0;
+    zoomStates[varName].zoomY = 1.0;
+  }
+}
+
+// ---- DETECTAR ZOOM MANUAL Y ACTUALIZAR BASE ----
+function setupPlotlyZoomListener(varName) {
+  const container = charts[varName].div;
+  
+  container.on('plotly_relayout', function(eventdata) {
+    // Solo actualizar base si fue zoom manual (no de sliders)
+    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
+      setTimeout(() => {
+        updateBaseRange(varName);
+        updateSliderDisplay(varName);
+      }, 100);
+    }
+  });
+}
+
+// ---- ACTUALIZAR DISPLAY DE SLIDERS ----
+function updateSliderDisplay(varName) {
+  const state = zoomStates[varName];
+  const controls = document.querySelectorAll(`#grafica_${varName}`).previousElementSibling;
+  
+  if (controls) {
+    const zoomXValue = controls.querySelector('span:nth-child(3)');
+    const zoomYValue = controls.querySelector('span:nth-child(6)');
+    const zoomXSlider = controls.querySelector('input:nth-child(2)');
+    const zoomYSlider = controls.querySelector('input:nth-child(5)');
+    
+    if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
+      zoomXSlider.value = Math.round(state.zoomX * 100);
+      zoomYSlider.value = Math.round(state.zoomY * 100);
+      zoomXValue.textContent = Math.round(state.zoomX * 100) + '%';
+      zoomYValue.textContent = Math.round(state.zoomY * 100) + '%';
+    }
+  }
+}
+
+// ---- ZOOM A ÚLTIMOS DATOS ----
+function zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
   
   const last20 = buf.x.slice(-20).map(x => new Date(x));
   const lastValues = buf.y.slice(-20);
@@ -229,25 +320,45 @@ function zoomToLatest(varName) {
     const maxY = Math.max(...lastValues);
     const padding = (maxY - minY) * 0.1 || 1;
     
+    // Aplicar zoom manual
     Plotly.relayout(charts[varName].div, {
       'xaxis.range': [minX, maxX],
       'yaxis.range': [minY - padding, maxY + padding],
       'xaxis.autorange': false,
       'yaxis.autorange': false
     });
+    
+    // Actualizar base range y sliders
+    setTimeout(() => {
+      updateBaseRange(varName);
+      zoomXSlider.value = '100';
+      zoomYSlider.value = '100';
+      zoomXValue.textContent = '100%';
+      zoomYValue.textContent = '100%';
+    }, 100);
   }
 }
 
 // ---- RESET ZOOM ----
-function resetZoom(varName) {
-  // Volver a 50% en ambos sliders
-  zoomStates[varName].x = 50;
-  zoomStates[varName].y = 50;
-  
+function resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
   Plotly.relayout(charts[varName].div, {
     'xaxis.autorange': true,
     'yaxis.autorange': true
   });
+  
+  // Resetear estado
+  setTimeout(() => {
+    zoomStates[varName].baseRange = null;
+    zoomStates[varName].zoomX = 1.0;
+    zoomStates[varName].zoomY = 1.0;
+    zoomStates[varName].centerX = null;
+    zoomStates[varName].centerY = null;
+    
+    zoomXSlider.value = '100';
+    zoomYSlider.value = '100';
+    zoomXValue.textContent = '100%';
+    zoomYValue.textContent = '100%';
+  }, 100);
 }
 
 // ---- ACTUALIZAR GRÁFICA ----
@@ -255,7 +366,6 @@ function updateChart(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
-  // Ordenar por fecha
   const combined = buf.x.map((x, i) => ({ 
     x: new Date(x), 
     y: buf.y[i]
@@ -277,10 +387,10 @@ function updateChart(varName) {
 
 // ---- CREAR GRAFICAS ----
 function createCharts(){
-  variables.forEach(v=>{
-    const divId = 'grafica_'+v;
+  variables.forEach(v => {
+    const divId = 'grafica_' + v;
     let container = document.getElementById(divId);
-    if(!container){
+    if (!container) {
       container = document.createElement('div');
       container.id = divId;
       container.style.width = '100%';
@@ -318,10 +428,11 @@ function createCharts(){
     };
 
     Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
+    setupPlotlyZoomListener(v);
   });
 }
 
-// ---- ACTUALIZAR DATOS ----
+// ---- RESTANTE DEL CÓDIGO IGUAL ----
 function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
@@ -335,7 +446,6 @@ function pushPoint(varName, fecha, value){
   updateChart(varName);
 }
 
-// ---- CARGAR HISTORICO ----
 async function loadAllFromMongo(){
   try{
     const res = await fetch('/api/data/all');
@@ -349,9 +459,9 @@ async function loadAllFromMongo(){
       dataBuffers[v].y = [];
     });
 
-    all.forEach(rec=>{
+    all.forEach(rec => {
       const fecha = new Date(rec.fecha);
-      variables.forEach(v=>{
+      variables.forEach(v => {
         if(rec[v] !== undefined && rec[v] !== null){
           dataBuffers[v].x.push(fecha);
           dataBuffers[v].y.push(rec[v]);
@@ -359,45 +469,34 @@ async function loadAllFromMongo(){
       });
     });
 
-    variables.forEach(v=>{
+    variables.forEach(v => {
       updateChart(v);
     });
 
-    // Aplicar zoom inicial (50%)
-    setTimeout(() => {
-      variables.forEach(v => {
-        if(dataBuffers[v].x.length > 0) {
-          applyZoom(v);
-        }
-      });
-    }, 1000);
-
-  }catch(e){
-    console.error('Error cargando histórico',e);
+  } catch(e) {
+    console.error('Error cargando histórico', e);
   }
 }
 
-// ---- SOCKET.IO ----
-socket.on('connect', ()=>console.log('Socket conectado'));
-socket.on('disconnect', ()=>console.log('Socket desconectado'));
+socket.on('connect', () => console.log('Socket conectado'));
+socket.on('disconnect', () => console.log('Socket desconectado'));
 
-socket.on('nuevoDato', data=>{
+socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
 
   if(data.latitud && data.longitud){
-    marker.setLatLng([data.latitud,data.longitud]);
-    map.setView([data.latitud,data.longitud],14);
+    marker.setLatLng([data.latitud, data.longitud]);
+    map.setView([data.latitud, data.longitud], 14);
     marker.bindPopup(`📍 ${data.latitud.toFixed(5)}, ${data.longitud.toFixed(5)}`).openPopup();
   }
 
-  variables.forEach(v=>{
+  variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
     }
   });
 });
 
-// ---- INICIO ----
 (async function init(){
   initMap();
   createCharts();
