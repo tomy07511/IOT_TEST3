@@ -17,20 +17,96 @@ const zoomStates = {};
 variables.forEach(v => {
   dataBuffers[v] = {x: [], y: []};
   zoomStates[v] = {
-    baseRange: null,      // Rango base actual (centro y tamaño)
-    zoomX: 1.0,           // Multiplicador de zoom X (1.0 = normal)
-    zoomY: 1.0,           // Multiplicador de zoom Y (1.0 = normal)
-    centerX: null,        // Centro actual en X
-    centerY: null         // Centro actual en Y
+    baseRange: null,
+    zoomX: 1.0,
+    zoomY: 1.0,
+    centerX: null,
+    centerY: null
   };
 });
 
-// ---- INIT MAP ----
+// ---- INIT MAP MEJORADO ----
 let map, marker;
 function initMap(){
+  // Crear contenedor del mapa si no existe
+  let mapContainer = document.getElementById('map');
+  if (!mapContainer) {
+    mapContainer = document.createElement('div');
+    mapContainer.id = 'map';
+    mapContainer.style.width = '100%';
+    mapContainer.style.height = '400px';
+    mapContainer.style.borderRadius = '8px';
+    mapContainer.style.marginBottom = '20px';
+    
+    // Insertar el mapa después de las gráficas y antes del botón de históricos
+    const graficaPlotly = document.querySelector('#graficaPlotly');
+    const btnHistoricos = document.querySelector('#btnHistoricos');
+    
+    if (btnHistoricos && graficaPlotly) {
+      graficaPlotly.parentNode.insertBefore(mapContainer, btnHistoricos);
+    } else if (graficaPlotly) {
+      graficaPlotly.parentNode.appendChild(mapContainer);
+    }
+  }
+
+  // Inicializar el mapa
   map = L.map('map').setView([4.65, -74.1], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}/.png', {attribution: '© OpenStreetMap'}).addTo(map);
-  marker = L.marker([4.65, -74.1]).addTo(map).bindPopup('Esperando datos GPS...');
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18
+  }).addTo(map);
+  
+  marker = L.marker([4.65, -74.1]).addTo(map)
+    .bindPopup('Esperando datos GPS...')
+    .openPopup();
+  
+  console.log('🗺️ Mapa inicializado correctamente');
+}
+
+// ---- REORDENAR BOTÓN HISTÓRICOS ----
+function moveHistoricosButton() {
+  const btnHistoricos = document.querySelector('#btnHistoricos');
+  if (btnHistoricos) {
+    // Mover al final del contenedor principal
+    const container = document.querySelector('.container');
+    if (container) {
+      container.appendChild(btnHistoricos);
+      console.log('🔽 Botón históricos movido al final');
+    }
+  }
+}
+
+// ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
+function updateMap(latitud, longitud, fecha) {
+  if (!map) {
+    console.log('⚠️ Mapa no está inicializado, reiniciando...');
+    initMap();
+    return;
+  }
+  
+  if (latitud && longitud) {
+    const newLatLng = [latitud, longitud];
+    
+    // Actualizar marcador
+    marker.setLatLng(newLatLng);
+    
+    // Mover el mapa suavemente a la nueva ubicación
+    map.setView(newLatLng, 14);
+    
+    // Actualizar popup con información
+    const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
+    marker.bindPopup(`
+      <div style="text-align: center;">
+        <strong>📍 Ubicación Actual</strong><br>
+        Lat: ${latitud.toFixed(5)}<br>
+        Lon: ${longitud.toFixed(5)}<br>
+        <small>${fechaStr}</small>
+      </div>
+    `).openPopup();
+    
+    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
+  }
 }
 
 // ---- CONTROLES CON SLIDERS ----
@@ -234,7 +310,7 @@ function applyMultiplierZoom(varName, axis, multiplier) {
   applyCombinedZoom(varName);
 }
 
-// ---- APLICAR ZOOM COMBINADO (BASE + MULTIPLICADORES) ----
+// ---- APLICAR ZOOM COMBINADO ----
 function applyCombinedZoom(varName) {
   const state = zoomStates[varName];
   const base = state.baseRange;
@@ -294,7 +370,7 @@ function updateBaseRange(varName) {
   }
 }
 
-// ---- DETECTAR ZOOM MANUAL Y ACTUALIZAR BASE ----
+// ---- DETECTAR ZOOM MANUAL ----
 function setupPlotlyZoomListener(varName) {
   const container = charts[varName].div;
   
@@ -337,12 +413,11 @@ function updateSliderBackground(slider, value) {
   slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS CORREGIDO ----
+// ---- ZOOM A ÚLTIMOS DATOS ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
-  // Tomar los últimos 15 datos
   const last15 = buf.x.slice(-15).map(x => new Date(x));
   const lastValues = buf.y.slice(-15);
   
@@ -353,7 +428,6 @@ function zoomToLatest(varName) {
     const maxY = Math.max(...lastValues);
     const padding = (maxY - minY) * 0.1 || 1;
     
-    // Aplicar zoom directamente a los últimos datos
     Plotly.relayout(charts[varName].div, {
       'xaxis.range': [minX, maxX],
       'yaxis.range': [minY - padding, maxY + padding],
@@ -407,7 +481,7 @@ function updateChart(varName) {
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
 }
 
-// ---- CREAR GRAFICAS CON MÁS SEPARACIÓN ----
+// ---- CREAR GRAFICAS ----
 function createCharts(){
   variables.forEach(v => {
     const divId = 'grafica_' + v;
@@ -458,7 +532,7 @@ function createCharts(){
   });
 }
 
-// ---- RESTANTE DEL CÓDIGO ----
+// ---- ACTUALIZAR DATOS EN TIEMPO REAL ----
 function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
@@ -472,6 +546,7 @@ function pushPoint(varName, fecha, value){
   updateChart(varName);
 }
 
+// ---- CARGAR HISTORICO ----
 async function loadAllFromMongo(){
   try{
     const res = await fetch('/api/data/all');
@@ -493,29 +568,44 @@ async function loadAllFromMongo(){
           dataBuffers[v].y.push(rec[v]);
         }
       });
+      
+      // Actualizar mapa con el último dato histórico que tenga coordenadas
+      if (rec.latitud && rec.longitud) {
+        updateMap(rec.latitud, rec.longitud, rec.fecha);
+      }
     });
 
     variables.forEach(v => {
       updateChart(v);
     });
 
+    console.log('✅ Históricos cargados y mapa actualizado');
+
   } catch(e) {
     console.error('Error cargando histórico', e);
   }
 }
 
-socket.on('connect', () => console.log('Socket conectado'));
-socket.on('disconnect', () => console.log('Socket desconectado'));
+// ---- SOCKET.IO MEJORADO ----
+socket.on('connect', () => {
+  console.log('🔌 Socket conectado - Listo para datos en tiempo real');
+});
+
+socket.on('disconnect', () => {
+  console.log('🔌 Socket desconectado');
+});
 
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
+  
+  console.log('📥 Nuevo dato recibido:', data);
 
+  // ACTUALIZAR MAPA EN TIEMPO REAL
   if(data.latitud && data.longitud){
-    marker.setLatLng([data.latitud, data.longitud]);
-    map.setView([data.latitud, data.longitud], 14);
-    marker.bindPopup(`📍 ${data.latitud.toFixed(5)}, ${data.longitud.toFixed(5)}`).openPopup();
+    updateMap(data.latitud, data.longitud, data.fecha);
   }
 
+  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
@@ -523,8 +613,21 @@ socket.on('nuevoDato', data => {
   });
 });
 
+// ---- INICIO MEJORADO ----
 (async function init(){
+  console.log('🚀 Iniciando aplicación...');
+  
+  // 1. Mover botón históricos al final
+  moveHistoricosButton();
+  
+  // 2. Inicializar mapa
   initMap();
+  
+  // 3. Crear gráficas
   createCharts();
+  
+  // 4. Cargar datos históricos
   await loadAllFromMongo();
+  
+  console.log('✅ Aplicación completamente inicializada');
 })();
