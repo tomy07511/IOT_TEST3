@@ -33,7 +33,7 @@ function initMap(){
   marker = L.marker([4.65, -74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES CON SLIDERS COMO MULTIPLICADORES ----
+// ---- CONTROLES CON SLIDERS Y BOTONES MEJORADOS ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
@@ -108,35 +108,52 @@ function createChartControls(varName, container) {
   zoomYValue.textContent = '100%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
   
-  // Botones
+  // Botones con nuevo estilo
   const buttonsDiv = document.createElement('div');
-  buttonsDiv.style.cssText = `display: flex; gap: 5px;`;
+  buttonsDiv.style.cssText = `display: flex; gap: 8px;`;
   
   const btnActuales = document.createElement('button');
-  btnActuales.innerHTML = '🕒';
-  btnActuales.title = 'Últimos datos';
+  btnActuales.textContent = 'Últimos';
+  btnActuales.title = 'Zoom a los últimos datos';
   btnActuales.style.cssText = `
-    padding: 4px 8px;
-    background: #7e57c2;
+    padding: 6px 12px;
+    background: transparent;
     color: white;
-    border: none;
+    border: 1px solid #00e5ff;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
   `;
   
   const btnReset = document.createElement('button');
-  btnReset.innerHTML = '🔁';
+  btnReset.textContent = 'Reset';
   btnReset.title = 'Resetear zoom';
   btnReset.style.cssText = `
-    padding: 4px 8px;
-    background: #00e5ff;
-    color: #002;
-    border: none;
+    padding: 6px 12px;
+    background: transparent;
+    color: white;
+    border: 1px solid #00e5ff;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
   `;
+  
+  // Efectos hover para botones
+  [btnActuales, btnReset].forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = '#00e5ff';
+      btn.style.color = '#002';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'transparent';
+      btn.style.color = 'white';
+    });
+  });
   
   // Event listeners para sliders
   zoomXSlider.addEventListener('input', (e) => {
@@ -264,9 +281,12 @@ function updateBaseRange(varName) {
   if (baseX && baseY) {
     zoomStates[varName].baseRange = { x: baseX, y: baseY };
     
-    // Resetear multiplicadores cuando cambia la base
+    // RESETEAR MULTIPLICADORES A 1.0 (100%) CUANDO HAY ZOOM MANUAL
     zoomStates[varName].zoomX = 1.0;
     zoomStates[varName].zoomY = 1.0;
+    
+    // Actualizar sliders visualmente
+    updateSliderDisplay(varName);
   }
 }
 
@@ -279,7 +299,6 @@ function setupPlotlyZoomListener(varName) {
     if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
       setTimeout(() => {
         updateBaseRange(varName);
-        updateSliderDisplay(varName);
       }, 100);
     }
   });
@@ -288,19 +307,22 @@ function setupPlotlyZoomListener(varName) {
 // ---- ACTUALIZAR DISPLAY DE SLIDERS ----
 function updateSliderDisplay(varName) {
   const state = zoomStates[varName];
-  const controls = document.querySelectorAll(`#grafica_${varName}`).previousElementSibling;
+  const controlsDiv = charts[varName].div.previousElementSibling;
   
-  if (controls) {
-    const zoomXValue = controls.querySelector('span:nth-child(3)');
-    const zoomYValue = controls.querySelector('span:nth-child(6)');
-    const zoomXSlider = controls.querySelector('input:nth-child(2)');
-    const zoomYSlider = controls.querySelector('input:nth-child(5)');
+  if (controlsDiv) {
+    const zoomXValue = controlsDiv.querySelector('span:nth-child(3)');
+    const zoomYValue = controlsDiv.querySelector('span:nth-child(6)');
+    const zoomXSlider = controlsDiv.querySelector('input:nth-child(2)');
+    const zoomYSlider = controlsDiv.querySelector('input:nth-child(5)');
     
     if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
-      zoomXSlider.value = Math.round(state.zoomX * 100);
-      zoomYSlider.value = Math.round(state.zoomY * 100);
-      zoomXValue.textContent = Math.round(state.zoomX * 100) + '%';
-      zoomYValue.textContent = Math.round(state.zoomY * 100) + '%';
+      const sliderValueX = Math.round(state.zoomX * 100);
+      const sliderValueY = Math.round(state.zoomY * 100);
+      
+      zoomXSlider.value = sliderValueX;
+      zoomYSlider.value = sliderValueY;
+      zoomXValue.textContent = sliderValueX + '%';
+      zoomYValue.textContent = sliderValueY + '%';
     }
   }
 }
@@ -331,10 +353,6 @@ function zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue)
     // Actualizar base range y sliders
     setTimeout(() => {
       updateBaseRange(varName);
-      zoomXSlider.value = '100';
-      zoomYSlider.value = '100';
-      zoomXValue.textContent = '100%';
-      zoomYValue.textContent = '100%';
     }, 100);
   }
 }
@@ -354,10 +372,7 @@ function resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
     zoomStates[varName].centerX = null;
     zoomStates[varName].centerY = null;
     
-    zoomXSlider.value = '100';
-    zoomYSlider.value = '100';
-    zoomXValue.textContent = '100%';
-    zoomYValue.textContent = '100%';
+    updateSliderDisplay(varName);
   }, 100);
 }
 
@@ -432,7 +447,7 @@ function createCharts(){
   });
 }
 
-// ---- RESTANTE DEL CÓDIGO IGUAL ----
+// ---- RESTANTE DEL CÓDIGO ----
 function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
