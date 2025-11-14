@@ -29,22 +29,23 @@ variables.forEach(v => {
 let map, marker;
 function initMap(){
   map = L.map('map').setView([4.65, -74.1], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}/.png', {attribution: '© OpenStreetMap'}).addTo(map);
   marker = L.marker([4.65, -74.1]).addTo(map).bindPopup('Esperando datos GPS...');
 }
 
-// ---- CONTROLES CON SLIDERS Y BOTONES MEJORADOS ----
+// ---- CONTROLES CON SLIDERS MEJORADOS ----
 function createChartControls(varName, container) {
   const controlsDiv = document.createElement('div');
   controlsDiv.style.cssText = `
     display: flex;
     gap: 15px;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
     justify-content: space-between;
     align-items: center;
-    padding: 8px;
+    padding: 12px;
     background: #102a3c;
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid #0f3a45;
     flex-wrap: wrap;
   `;
   
@@ -56,6 +57,7 @@ function createChartControls(varName, container) {
     font-weight: 600;
     min-width: 100px;
     text-transform: capitalize;
+    font-size: 14px;
   `;
   
   // Controles de Zoom X
@@ -73,15 +75,19 @@ function createChartControls(varName, container) {
   zoomXSlider.value = '100';
   zoomXSlider.style.cssText = `
     flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: #0f3a45;
+    height: 8px;
+    border-radius: 4px;
+    background: #2a4a5a;
     outline: none;
+    -webkit-appearance: none;
   `;
+  
+  // Estilos personalizados para el slider
+  zoomXSlider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${(100/400)*100}%, #2a4a5a ${(100/400)*100}%, #2a4a5a 100%)`;
   
   const zoomXValue = document.createElement('span');
   zoomXValue.textContent = '100%';
-  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
   // Controles de Zoom Y
   const zoomYDiv = document.createElement('div');
@@ -98,48 +104,54 @@ function createChartControls(varName, container) {
   zoomYSlider.value = '100';
   zoomYSlider.style.cssText = `
     flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: #0f3a45;
+    height: 8px;
+    border-radius: 4px;
+    background: #2a4a5a;
     outline: none;
+    -webkit-appearance: none;
   `;
+  
+  // Estilos personalizados para el slider Y
+  zoomYSlider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${(100/400)*100}%, #2a4a5a ${(100/400)*100}%, #2a4a5a 100%)`;
   
   const zoomYValue = document.createElement('span');
   zoomYValue.textContent = '100%';
-  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px;`;
+  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
   // Botones con nuevo estilo
   const buttonsDiv = document.createElement('div');
-  buttonsDiv.style.cssText = `display: flex; gap: 8px;`;
+  buttonsDiv.style.cssText = `display: flex; gap: 10px;`;
   
   const btnActuales = document.createElement('button');
   btnActuales.textContent = 'Últimos';
   btnActuales.title = 'Zoom a los últimos datos';
   btnActuales.style.cssText = `
-    padding: 6px 12px;
+    padding: 8px 16px;
     background: transparent;
     color: white;
-    border: 1px solid #00e5ff;
-    border-radius: 4px;
+    border: 2px solid #00e5ff;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
+    min-width: 80px;
   `;
   
   const btnReset = document.createElement('button');
   btnReset.textContent = 'Reset';
   btnReset.title = 'Resetear zoom';
   btnReset.style.cssText = `
-    padding: 6px 12px;
+    padding: 8px 16px;
     background: transparent;
     color: white;
-    border: 1px solid #00e5ff;
-    border-radius: 4px;
+    border: 2px solid #00e5ff;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
     transition: all 0.3s ease;
+    min-width: 80px;
   `;
   
   // Efectos hover para botones
@@ -147,26 +159,39 @@ function createChartControls(varName, container) {
     btn.addEventListener('mouseenter', () => {
       btn.style.background = '#00e5ff';
       btn.style.color = '#002';
+      btn.style.transform = 'translateY(-2px)';
     });
     
     btn.addEventListener('mouseleave', () => {
       btn.style.background = 'transparent';
       btn.style.color = 'white';
+      btn.style.transform = 'translateY(0)';
     });
   });
   
-  // Event listeners para sliders
+  // Event listeners para sliders con actualización visual
+  function updateSliderBackground(slider, value) {
+    const percent = ((value - slider.min) / (slider.max - slider.min)) * 100;
+    slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
+  }
+  
   zoomXSlider.addEventListener('input', (e) => {
     const sliderValue = parseInt(e.target.value);
     zoomXValue.textContent = sliderValue + '%';
+    updateSliderBackground(zoomXSlider, sliderValue);
     applyMultiplierZoom(varName, 'x', sliderValue / 100);
   });
   
   zoomYSlider.addEventListener('input', (e) => {
     const sliderValue = parseInt(e.target.value);
     zoomYValue.textContent = sliderValue + '%';
+    updateSliderBackground(zoomYSlider, sliderValue);
     applyMultiplierZoom(varName, 'y', sliderValue / 100);
   });
+  
+  // Inicializar fondos de sliders
+  updateSliderBackground(zoomXSlider, 100);
+  updateSliderBackground(zoomYSlider, 100);
   
   // Event listeners para botones
   btnActuales.addEventListener('click', () => zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue));
@@ -323,8 +348,20 @@ function updateSliderDisplay(varName) {
       zoomYSlider.value = sliderValueY;
       zoomXValue.textContent = sliderValueX + '%';
       zoomYValue.textContent = sliderValueY + '%';
+      
+      // Actualizar fondos de los sliders
+      updateSliderBackground(zoomXSlider, sliderValueX);
+      updateSliderBackground(zoomYSlider, sliderValueY);
     }
   }
+}
+
+// ---- FUNCIÓN PARA ACTUALIZAR FONDO DE SLIDERS ----
+function updateSliderBackground(slider, value) {
+  const min = parseInt(slider.min);
+  const max = parseInt(slider.max);
+  const percent = ((value - min) / (max - min)) * 100;
+  slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
 }
 
 // ---- ZOOM A ÚLTIMOS DATOS ----
@@ -400,7 +437,7 @@ function updateChart(varName) {
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
 }
 
-// ---- CREAR GRAFICAS ----
+// ---- CREAR GRAFICAS CON MÁS SEPARACIÓN ----
 function createCharts(){
   variables.forEach(v => {
     const divId = 'grafica_' + v;
@@ -409,8 +446,12 @@ function createCharts(){
       container = document.createElement('div');
       container.id = divId;
       container.style.width = '100%';
-      container.style.height = '350px';
-      container.style.marginBottom = '10px';
+      container.style.height = '380px'; // Un poco más alto
+      container.style.marginBottom = '25px'; // Más separación entre gráficas
+      container.style.padding = '15px';
+      container.style.background = '#071923';
+      container.style.borderRadius = '8px';
+      container.style.border = '1px solid #0f3a45';
       document.querySelector('#graficaPlotly').appendChild(container);
     }
 
@@ -432,7 +473,7 @@ function createCharts(){
           gridcolor: '#0f3a45',
           autorange: true
         },
-        margin: { l: 60, r: 30, t: 10, b: 60 },
+        margin: { l: 60, r: 30, t: 10, b: 80 }, // Más margen abajo
         showlegend: false
       },
       config: {
