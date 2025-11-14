@@ -9,31 +9,47 @@ const colorMap = {
   nitrogeno:"#ffca28", fosforo:"#ec407a", potasio:"#29b6f6", bateria:"#8d6e63", corriente:"#c2185b"
 };
 
-const MAX_POINTS = 200; // Reducido para mejor performance en tiempo real
+const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
+const zoomStates = {};
 
-// Inicializar buffers
 variables.forEach(v => {
-  dataBuffers[v] = { x: [], y: [] };
+  dataBuffers[v] = {x: [], y: []};
+  zoomStates[v] = {
+    baseRange: null,
+    zoomX: 1.0,
+    zoomY: 1.0,
+    centerX: null,
+    centerY: null
+  };
 });
 
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  const mapContainer = document.getElementById('map');
-  if (!mapContainer) return;
+  // Verificar si el mapa ya existe
+  let mapContainer = document.getElementById('map');
+  if (!mapContainer) {
+    console.log('❌ Contenedor del mapa no encontrado');
+    return;
+  }
   
+  // Limpiar el contenedor del mapa
   mapContainer.innerHTML = '';
   
+  // Crear elemento interno para el mapa
   const mapInner = document.createElement('div');
   mapInner.id = 'map-inner';
   mapInner.style.width = '100%';
   mapInner.style.height = '400px';
   mapInner.style.borderRadius = '8px';
+  
   mapContainer.appendChild(mapInner);
   
+  // Inicializar el mapa
   map = L.map('map-inner').setView([4.65, -74.1], 12);
+  
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
     maxZoom: 18
@@ -42,194 +58,580 @@ function initMap(){
   marker = L.marker([4.65, -74.1]).addTo(map)
     .bindPopup('Esperando datos GPS...')
     .openPopup();
+  
+  console.log('🗺️ Mapa inicializado correctamente');
 }
 
 // ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
-  if (!map || !latitud || !longitud) return;
+  if (!map) {
+    console.log('⚠️ Mapa no está inicializado');
+    return;
+  }
   
-  const newLatLng = [latitud, longitud];
-  marker.setLatLng(newLatLng);
-  map.setView(newLatLng, 14);
-  
-  const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
-  marker.bindPopup(`
-    <div style="text-align: center;">
-      <strong>📍 Ubicación Actual</strong><br>
-      Lat: ${latitud.toFixed(5)}<br>
-      Lon: ${longitud.toFixed(5)}<br>
-      <small>${fechaStr}</small>
-    </div>
-  `).openPopup();
+  if (latitud && longitud) {
+    const newLatLng = [latitud, longitud];
+    
+    // Actualizar marcador
+    marker.setLatLng(newLatLng);
+    
+    // Mover el mapa suavemente a la nueva ubicación
+    map.setView(newLatLng, 14);
+    
+    // Actualizar popup con información
+    const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
+    marker.bindPopup(`
+      <div style="text-align: center;">
+        <strong>📍 Ubicación Actual</strong><br>
+        Lat: ${latitud.toFixed(5)}<br>
+        Lon: ${longitud.toFixed(5)}<br>
+        <small>${fechaStr}</small>
+      </div>
+    `).openPopup();
+    
+    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
+  }
 }
 
-// ---- CREAR GRÁFICAS SIMPLIFICADAS ----
+// ---- CONTROLES CON SLIDERS ----
+function createChartControls(varName, container) {
+  const controlsDiv = document.createElement('div');
+  controlsDiv.style.cssText = `
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #102a3c;
+    border-radius: 8px;
+    border: 1px solid #0f3a45;
+    flex-wrap: wrap;
+  `;
+  
+  // Título
+  const title = document.createElement('span');
+  title.textContent = varName;
+  title.style.cssText = `
+    color: #00e5ff;
+    font-weight: 600;
+    min-width: 100px;
+    text-transform: capitalize;
+    font-size: 14px;
+  `;
+  
+  // Controles de Zoom X
+  const zoomXDiv = document.createElement('div');
+  zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
+  
+  const zoomXLabel = document.createElement('span');
+  zoomXLabel.textContent = 'Zoom X:';
+  zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomXSlider = document.createElement('input');
+  zoomXSlider.type = 'range';
+  zoomXSlider.min = '10';
+  zoomXSlider.max = '200';
+  zoomXSlider.value = '50';
+  zoomXSlider.style.cssText = `
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: #2a4a5a;
+    outline: none;
+    -webkit-appearance: none;
+  `;
+  
+  const zoomXValue = document.createElement('span');
+  zoomXValue.textContent = '50%';
+  zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
+  
+  // Controles de Zoom Y
+  const zoomYDiv = document.createElement('div');
+  zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
+  
+  const zoomYLabel = document.createElement('span');
+  zoomYLabel.textContent = 'Zoom Y:';
+  zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
+  
+  const zoomYSlider = document.createElement('input');
+  zoomYSlider.type = 'range';
+  zoomYSlider.min = '10';
+  zoomYSlider.max = '200';
+  zoomYSlider.value = '50';
+  zoomYSlider.style.cssText = `
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: #2a4a5a;
+    outline: none;
+    -webkit-appearance: none;
+  `;
+  
+  const zoomYValue = document.createElement('span');
+  zoomYValue.textContent = '50%';
+  zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
+  
+  // Botones
+  const buttonsDiv = document.createElement('div');
+  buttonsDiv.style.cssText = `display: flex; gap: 10px;`;
+  
+  const btnActuales = document.createElement('button');
+  btnActuales.textContent = 'Últimos';
+  btnActuales.title = 'Zoom a los últimos datos';
+  btnActuales.style.cssText = `
+    padding: 8px 16px;
+    background: transparent;
+    color: white;
+    border: 2px solid #00e5ff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    min-width: 80px;
+  `;
+  
+  const btnReset = document.createElement('button');
+  btnReset.textContent = 'Reset';
+  btnReset.title = 'Resetear zoom';
+  btnReset.style.cssText = `
+    padding: 8px 16px;
+    background: transparent;
+    color: white;
+    border: 2px solid #00e5ff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    min-width: 80px;
+  `;
+  
+  // Efectos hover para botones
+  [btnActuales, btnReset].forEach(btn => {
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = '#00e5ff';
+      btn.style.color = '#002';
+      btn.style.transform = 'translateY(-2px)';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'transparent';
+      btn.style.color = 'white';
+      btn.style.transform = 'translateY(0)';
+    });
+  });
+  
+  // Event listeners para sliders con actualización visual
+  function updateSliderBackground(slider, value) {
+    const min = parseInt(slider.min);
+    const max = parseInt(slider.max);
+    const percent = ((value - min) / (max - min)) * 100;
+    slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
+  }
+  
+  zoomXSlider.addEventListener('input', (e) => {
+    const sliderValue = parseInt(e.target.value);
+    zoomXValue.textContent = sliderValue + '%';
+    updateSliderBackground(zoomXSlider, sliderValue);
+    applyMultiplierZoom(varName, 'x', sliderValue / 50);
+  });
+  
+  zoomYSlider.addEventListener('input', (e) => {
+    const sliderValue = parseInt(e.target.value);
+    zoomYValue.textContent = sliderValue + '%';
+    updateSliderBackground(zoomYSlider, sliderValue);
+    applyMultiplierZoom(varName, 'y', sliderValue / 50);
+  });
+  
+  // Inicializar fondos de sliders
+  updateSliderBackground(zoomXSlider, 50);
+  updateSliderBackground(zoomYSlider, 50);
+  
+  // Event listeners para botones
+  btnActuales.addEventListener('click', () => zoomToLatest(varName));
+  btnReset.addEventListener('click', () => resetZoom(varName));
+  
+  // Ensamblar controles
+  zoomXDiv.appendChild(zoomXLabel);
+  zoomXDiv.appendChild(zoomXSlider);
+  zoomXDiv.appendChild(zoomXValue);
+  
+  zoomYDiv.appendChild(zoomYLabel);
+  zoomYDiv.appendChild(zoomYSlider);
+  zoomYDiv.appendChild(zoomYValue);
+  
+  buttonsDiv.appendChild(btnActuales);
+  buttonsDiv.appendChild(btnReset);
+  
+  controlsDiv.appendChild(title);
+  controlsDiv.appendChild(zoomXDiv);
+  controlsDiv.appendChild(zoomYDiv);
+  controlsDiv.appendChild(buttonsDiv);
+  
+  container.parentNode.insertBefore(controlsDiv, container);
+  
+  return { zoomXSlider, zoomXValue, zoomYSlider, zoomYValue };
+}
+
+// ---- APLICAR ZOOM COMO MULTIPLICADOR ----
+function applyMultiplierZoom(varName, axis, multiplier) {
+  const state = zoomStates[varName];
+  
+  if (!state.baseRange) {
+    updateBaseRange(varName);
+  }
+  
+  if (!state.baseRange) return;
+  
+  if (axis === 'x') {
+    state.zoomX = multiplier;
+  } else {
+    state.zoomY = multiplier;
+  }
+  
+  applyCombinedZoom(varName);
+}
+
+// ---- APLICAR ZOOM COMBINADO ----
+function applyCombinedZoom(varName) {
+  const state = zoomStates[varName];
+  const base = state.baseRange;
+  
+  if (!base) return;
+  
+  const visibleRangeX = (base.x[1] - base.x[0]) / state.zoomX;
+  const visibleRangeY = (base.y[1] - base.y[0]) / state.zoomY;
+  
+  const centerX = state.centerX || (base.x[0] + base.x[1]) / 2;
+  const centerY = state.centerY || (base.y[0] + base.y[1]) / 2;
+  
+  const newMinX = centerX - visibleRangeX / 2;
+  const newMaxX = centerX + visibleRangeX / 2;
+  const newMinY = centerY - visibleRangeY / 2;
+  const newMaxY = centerY + visibleRangeY / 2;
+  
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.range': [new Date(newMinX), new Date(newMaxX)],
+    'yaxis.range': [newMinY, newMaxY],
+    'xaxis.autorange': false,
+    'yaxis.autorange': false
+  });
+}
+
+// ---- ACTUALIZAR RANGO BASE ----
+function updateBaseRange(varName) {
+  const graphDiv = charts[varName].div;
+  const layout = graphDiv.layout;
+  const buf = dataBuffers[varName];
+  
+  if (buf.x.length === 0) return;
+  
+  let baseX, baseY;
+  
+  if (layout.xaxis.range) {
+    const [minX, maxX] = layout.xaxis.range;
+    baseX = [new Date(minX).getTime(), new Date(maxX).getTime()];
+    zoomStates[varName].centerX = (baseX[0] + baseX[1]) / 2;
+  } else {
+    const allDates = buf.x.map(x => new Date(x).getTime());
+    baseX = [Math.min(...allDates), Math.max(...allDates)];
+  }
+  
+  if (layout.yaxis.range) {
+    baseY = layout.yaxis.range;
+    zoomStates[varName].centerY = (baseY[0] + baseY[1]) / 2;
+  } else {
+    baseY = [Math.min(...buf.y), Math.max(...buf.y)];
+  }
+  
+  if (baseX && baseY) {
+    zoomStates[varName].baseRange = { x: baseX, y: baseY };
+    zoomStates[varName].zoomX = 1.0;
+    zoomStates[varName].zoomY = 1.0;
+    updateSliderDisplay(varName, 50, 50);
+  }
+}
+
+// ---- DETECTAR ZOOM MANUAL ----
+function setupPlotlyZoomListener(varName) {
+  const container = charts[varName].div;
+  
+  container.on('plotly_relayout', function(eventdata) {
+    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
+      setTimeout(() => {
+        updateBaseRange(varName);
+      }, 100);
+    }
+  });
+}
+
+// ---- ACTUALIZAR DISPLAY DE SLIDERS ----
+function updateSliderDisplay(varName, xValue = 50, yValue = 50) {
+  const controlsDiv = charts[varName].div.previousElementSibling;
+  
+  if (controlsDiv) {
+    const zoomXValue = controlsDiv.querySelector('span:nth-child(3)');
+    const zoomYValue = controlsDiv.querySelector('span:nth-child(6)');
+    const zoomXSlider = controlsDiv.querySelector('input:nth-child(2)');
+    const zoomYSlider = controlsDiv.querySelector('input:nth-child(5)');
+    
+    if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
+      zoomXSlider.value = xValue;
+      zoomYSlider.value = yValue;
+      zoomXValue.textContent = xValue + '%';
+      zoomYValue.textContent = yValue + '%';
+      
+      updateSliderBackground(zoomXSlider, xValue);
+      updateSliderBackground(zoomYSlider, yValue);
+    }
+  }
+}
+
+// ---- FUNCIÓN PARA ACTUALIZAR FONDO DE SLIDERS ----
+function updateSliderBackground(slider, value) {
+  const min = parseInt(slider.min);
+  const max = parseInt(slider.max);
+  const percent = ((value - min) / (max - min)) * 100;
+  slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
+}
+
+// ---- ZOOM A ÚLTIMOS DATOS (MEJORADA) ----
+function zoomToLatest(varName) {
+  const buf = dataBuffers[varName];
+  
+  // Validaciones robustas
+  if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
+    console.log(`⚠️ No hay datos para ${varName}`);
+    return;
+  }
+  
+  // Verificar que la gráfica existe y está lista
+  if (!charts[varName] || !charts[varName].div) {
+    console.log(`⚠️ Gráfica de ${varName} no está lista`);
+    return;
+  }
+  
+  // Tomar últimos 15 datos (o menos si no hay suficientes)
+  const dataCount = buf.x.length;
+  const pointsToShow = Math.min(15, dataCount);
+  
+  if (pointsToShow === 0) {
+    console.log(`⚠️ No hay datos suficientes para ${varName}`);
+    return;
+  }
+  
+  const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
+  const lastValues = buf.y.slice(-pointsToShow);
+  
+  // Validar que las fechas sean válidas
+  const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
+  const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
+  
+  if (validDates.length === 0 || validValues.length === 0) {
+    console.log(`⚠️ Datos inválidos para ${varName}`);
+    return;
+  }
+  
+  // Calcular rangos con padding
+  const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
+  const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
+  const minY = Math.min(...validValues);
+  const maxY = Math.max(...validValues);
+  
+  // Agregar padding para mejor visualización
+  const timeRange = maxX.getTime() - minX.getTime();
+  const valueRange = maxY - minY;
+  
+  const paddedMinX = new Date(minX.getTime() - timeRange * 0.1);
+  const paddedMaxX = new Date(maxX.getTime() + timeRange * 0.1);
+  const paddedMinY = minY - valueRange * 0.1;
+  const paddedMaxY = maxY + valueRange * 0.1;
+  
+  // Aplicar zoom solo si los rangos son válidos
+  if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
+      !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
+    
+    Plotly.relayout(charts[varName].div, {
+      'xaxis.range': [paddedMinX, paddedMaxX],
+      'yaxis.range': [paddedMinY, paddedMaxY],
+      'xaxis.autorange': false,
+      'yaxis.autorange': false
+    });
+    
+    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
+    
+  } else {
+    console.log(`❌ Rangos inválidos para ${varName}`);
+  }
+}
+
+// ---- RESET ZOOM ----
+function resetZoom(varName) {
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.autorange': true,
+    'yaxis.autorange': true
+  });
+  
+  setTimeout(() => {
+    zoomStates[varName].baseRange = null;
+    zoomStates[varName].zoomX = 1.0;
+    zoomStates[varName].zoomY = 1.0;
+    zoomStates[varName].centerX = null;
+    zoomStates[varName].centerY = null;
+    
+    updateSliderDisplay(varName, 50, 50);
+  }, 100);
+}
+
+// ---- ACTUALIZAR GRÁFICA CON PUNTOS ----
+function updateChart(varName) {
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  const combined = buf.x.map((x, i) => ({ 
+    x: new Date(x), 
+    y: buf.y[i]
+  })).sort((a, b) => a.x - b.x);
+  
+  // Determinar el modo basado en la cantidad de datos
+  const dataCount = combined.length;
+  const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
+  const markerSize = dataCount <= 30 ? 6 : 0;
+  
+  const trace = {
+    x: combined.map(d => d.x),
+    y: combined.map(d => d.y),
+    type: 'scatter',
+    mode: mode,
+    line: { color: colorMap[varName], width: 2 },
+    marker: {
+      size: markerSize,
+      color: colorMap[varName],
+      opacity: 0.8
+    },
+    name: varName,
+    hovertemplate: '%{x|%d/%m %H:%M}<br>' + varName + ': %{y:.2f}<extra></extra>',
+    connectgaps: false
+  };
+  
+  Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
+  
+  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
+}
+
+// ---- CREAR GRAFICAS ----
 function createCharts(){
-  const graficaPlotly = document.getElementById('graficaPlotly');
-  if (!graficaPlotly) return;
-  
-  // Limpiar contenedor
-  graficaPlotly.innerHTML = '';
-  
   variables.forEach(v => {
-    const container = document.createElement('div');
-    container.id = `grafica_${v}`;
-    container.className = 'chart-container';
-    container.style.cssText = `
-      width: 100%;
-      height: 300px;
-      margin-bottom: 20px;
-      background: #071923;
-      border-radius: 8px;
-      border: 1px solid #0f3a45;
-    `;
-    graficaPlotly.appendChild(container);
+    const divId = 'grafica_' + v;
+    let container = document.getElementById(divId);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = divId;
+      container.style.width = '100%';
+      container.style.height = '380px';
+      container.style.marginBottom = '25px';
+      container.style.padding = '15px';
+      container.style.background = '#071923';
+      container.style.borderRadius = '8px';
+      container.style.border = '1px solid #0f3a45';
+      document.querySelector('#graficaPlotly').appendChild(container);
+    }
+
+    createChartControls(v, container);
 
     charts[v] = {
       div: container,
       layout: {
-        title: { 
-          text: v.charAt(0).toUpperCase() + v.slice(1), 
-          font: { color: '#00e5ff', size: 14 } 
-        },
+        title: { text: '', font: { color: '#00e5ff', size: 14 } },
         plot_bgcolor: '#071923',
         paper_bgcolor: '#071923',
         font: { color: '#eaf6f8' },
         xaxis: {
           type: 'date',
           gridcolor: '#0f3a45',
-          tickcolor: '#0f3a45',
-          title: { text: 'Tiempo', font: { color: '#a0d2e0' } }
+          tickcolor: '#0f3a45'
         },
         yaxis: {
           gridcolor: '#0f3a45',
-          title: { text: v, font: { color: '#a0d2e0' } }
+          autorange: true
         },
-        margin: { l: 60, r: 30, t: 40, b: 60 },
+        margin: { l: 60, r: 30, t: 10, b: 80 },
         showlegend: false
       },
       config: {
         responsive: true,
         displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+        displaylogo: false
       }
     };
 
-    // Crear gráfica vacía
-    Plotly.newPlot(container, [{
-      x: [],
-      y: [],
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: colorMap[v], width: 2 },
-      name: v
-    }], charts[v].layout, charts[v].config);
+    Plotly.newPlot(container, [], charts[v].layout, charts[v].config);
+    setupPlotlyZoomListener(v);
   });
 }
 
-// ---- ACTUALIZAR GRÁFICA EN TIEMPO REAL ----
-function updateChart(varName) {
+// ---- ACTUALIZAR DATOS EN TIEMPO REAL ----
+function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
-  
-  const trace = {
-    x: buf.x.map(x => new Date(x)),
-    y: buf.y,
-    type: 'scatter',
-    mode: 'lines',
-    line: { color: colorMap[varName], width: 2 },
-    name: varName,
-    hovertemplate: `%{x|%H:%M:%S}<br>${varName}: %{y:.2f}<extra></extra>`
-  };
-  
-  Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
-}
-
-// ---- AGREGAR NUEVO PUNTO ----
-function pushPoint(varName, fecha, value) {
-  const buf = dataBuffers[varName];
-  
-  // Agregar nuevo punto
   buf.x.push(fecha);
   buf.y.push(value);
   
-  // Mantener solo los últimos MAX_POINTS puntos
-  if (buf.x.length > MAX_POINTS) {
+  if(buf.x.length > MAX_POINTS){
     buf.x.shift();
     buf.y.shift();
   }
   
-  // Actualizar gráfica inmediatamente
   updateChart(varName);
 }
 
-// ---- CARGAR ÚLTIMOS DATOS ---- 
-async function loadRecentData() {
-  try {
-    const res = await fetch('/api/data/latest');
-    if (!res.ok) throw new Error('Error ' + res.status);
+// ---- CARGAR HISTORICO COMPLETO ----
+async function loadAllFromMongo(){
+  try{
+    const res = await fetch('/api/data/all');
+    if(!res.ok) throw new Error('Error '+res.status);
+    const all = await res.json();
     
-    const data = await res.json();
-    if (!Array.isArray(data)) return;
+    if (!all || !Array.isArray(all)) {
+      console.log('⚠️ No se recibieron datos históricos');
+      return;
+    }
     
-    console.log('📥 Cargando últimos datos:', data.length, 'registros');
+    console.log('📥 Cargando históricos:', all.length, 'registros');
     
-    // Procesar datos más recientes primero
-    data.reverse().forEach(rec => {
+    variables.forEach(v => {
+      dataBuffers[v].x = [];
+      dataBuffers[v].y = [];
+    });
+
+    all.forEach(rec => {
       const fecha = new Date(rec.fecha);
-      
       variables.forEach(v => {
-        if (rec[v] !== undefined && rec[v] !== null) {
-          pushPoint(v, fecha, rec[v]);
+        if(rec[v] !== undefined && rec[v] !== null){
+          dataBuffers[v].x.push(fecha);
+          dataBuffers[v].y.push(rec[v]);
         }
       });
       
+      // Actualizar mapa con el último dato histórico que tenga coordenadas
       if (rec.latitud && rec.longitud) {
         updateMap(rec.latitud, rec.longitud, rec.fecha);
       }
     });
-    
-    console.log('✅ Datos recientes cargados');
-    
-  } catch (e) {
-    console.error('❌ Error cargando datos recientes:', e);
+
+    variables.forEach(v => {
+      updateChart(v);
+    });
+
+    console.log('✅ Históricos cargados correctamente');
+
+  } catch(e) {
+    console.error('❌ Error cargando histórico:', e);
   }
 }
 
-// ---- SOCKET.IO - RECEPCIÓN EN TIEMPO REAL ----
-socket.on('connect', () => {
-  console.log('🔌 Conectado - Listo para datos en tiempo real');
-  document.body.style.border = '3px solid #00ff00'; // Indicador visual de conexión
-});
-
-socket.on('disconnect', () => {
-  console.log('🔌 Desconectado');
-  document.body.style.border = '3px solid #ff0000'; // Indicador visual de desconexión
-});
-
-socket.on('nuevoDato', data => {
-  const fecha = data.fecha ? new Date(data.fecha) : new Date();
-  
-  console.log('📥 Nuevo dato:', {
-    tiempo: fecha.toLocaleTimeString(),
-    ...data
-  });
-
-  // ACTUALIZAR MAPA EN TIEMPO REAL
-  if (data.latitud && data.longitud) {
-    updateMap(data.latitud, data.longitud, data.fecha);
-  }
-
-  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
-  variables.forEach(v => {
-    if (data[v] !== undefined && data[v] !== null) {
-      pushPoint(v, fecha, data[v]);
-    }
-  });
-});
-
-// ---- INDICADORES VISUALES DE ESTADO ----
+// ---- INDICADOR DE ESTADO EN TIEMPO REAL ----
 function createStatusIndicator() {
   const statusDiv = document.createElement('div');
   statusDiv.id = 'status-indicator';
@@ -256,31 +658,18 @@ function createStatusIndicator() {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #00ff00;
-    animation: pulse 2s infinite;
+    background: #ff0000;
   `;
   
   const text = document.createElement('span');
   text.id = 'status-text';
-  text.textContent = 'Conectado';
+  text.textContent = 'Desconectado';
   
   statusDiv.appendChild(dot);
   statusDiv.appendChild(text);
   document.body.appendChild(statusDiv);
-  
-  // Estilos para la animación del pulso
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-  `;
-  document.head.appendChild(style);
 }
 
-// ---- ACTUALIZAR INDICADOR DE ESTADO ----
 function updateStatus(connected) {
   const dot = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
@@ -296,68 +685,64 @@ function updateStatus(connected) {
   }
 }
 
-// ---- INICIALIZACIÓN ----
-async function init(){
-  console.log('🚀 Iniciando aplicación de tiempo real...');
-  
-  // Crear indicador de estado
-  createStatusIndicator();
-  
-  // Verificar librerías
-  console.log('📚 Librerías:', {
-    io: typeof io,
-    L: typeof L, 
-    Plotly: typeof Plotly
-  });
-  
-  // Inicializar componentes
-  initMap();
-  createCharts();
-  
-  // Cargar datos recientes (no todo el histórico)
-  await loadRecentData();
-  
-  console.log('✅ Aplicación lista para datos en tiempo real');
-  console.log('📡 Esperando datos MQTT...');
-}
-
-// ---- EVENTOS SOCKET ACTUALIZADOS ----
+// ---- SOCKET.IO MEJORADO ----
 socket.on('connect', () => {
-  console.log('🔌 CONECTADO - Recibiendo datos en tiempo real');
+  console.log('🔌 Socket conectado - Listo para datos MQTT en tiempo real');
   updateStatus(true);
 });
 
 socket.on('disconnect', () => {
-  console.log('🔌 DESCONECTADO');
+  console.log('🔌 Socket desconectado');
   updateStatus(false);
 });
 
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
-  const timestamp = fecha.toLocaleTimeString();
   
-  console.log(`🕒 ${timestamp} - Nuevo dato recibido`);
-  
-  // Actualizar mapa si hay coordenadas
-  if (data.latitud && data.longitud) {
+  console.log('📥 Nuevo dato MQTT recibido:', data);
+
+  // ACTUALIZAR MAPA EN TIEMPO REAL
+  if(data.latitud && data.longitud){
     updateMap(data.latitud, data.longitud, data.fecha);
-    console.log(`🗺️ Mapa actualizado: ${data.latitud}, ${data.longitud}`);
   }
-  
-  // Actualizar todas las variables que tengan datos
+
+  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
   variables.forEach(v => {
-    if (data[v] !== undefined && data[v] !== null) {
+    if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
-      console.log(`📈 ${v}: ${data[v]}`);
+      console.log(`📈 ${v} actualizado: ${data[v]}`);
     }
   });
 });
 
-// Manejar errores de conexión
-socket.on('connect_error', (error) => {
-  console.error('❌ Error de conexión Socket.IO:', error);
-  updateStatus(false);
-});
+// ---- VERIFICAR ELEMENTOS ----
+function verificarElementos() {
+  const elementos = ['map', 'btnHistoricos', 'graficaPlotly'];
+  elementos.forEach(id => {
+    const elemento = document.getElementById(id);
+    console.log(`${id}:`, elemento ? '✅ Encontrado' : '❌ No encontrado');
+  });
+}
 
-// Iniciar la aplicación
-init();
+// ---- INICIO MEJORADO ----
+(async function init(){
+  console.log('🚀 Iniciando aplicación...');
+  
+  // Crear indicador de estado
+  createStatusIndicator();
+  
+  // Verificar elementos existentes
+  verificarElementos();
+  
+  // 1. Inicializar mapa
+  initMap();
+  
+  // 2. Crear gráficas
+  createCharts();
+  
+  // 3. Cargar datos históricos (COMPLETOS - como antes)
+  await loadAllFromMongo();
+  
+  console.log('✅ Aplicación completamente inicializada');
+  console.log('📡 Esperando datos MQTT en tiempo real...');
+})();
