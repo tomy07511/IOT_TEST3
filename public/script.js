@@ -25,6 +25,29 @@ variables.forEach(v => {
   };
 });
 
+// ---- REORDENAR ELEMENTOS ----
+function reorganizarElementos() {
+  const container = document.querySelector('.container');
+  if (!container) return;
+  
+  // Obtener elementos
+  const graficaPlotly = document.getElementById('graficaPlotly');
+  const mapContainer = document.getElementById('map');
+  const btnHistoricos = document.getElementById('btnHistoricos');
+  
+  // Limpiar container
+  while (container.firstChild) {
+    container.removeChild(container.firstChild);
+  }
+  
+  // Reconstruir en el orden correcto
+  if (graficaPlotly) container.appendChild(graficaPlotly);
+  if (mapContainer) container.appendChild(mapContainer);
+  if (btnHistoricos) container.appendChild(btnHistoricos);
+  
+  console.log('🔄 Elementos reorganizados correctamente');
+}
+
 // ---- INIT MAP MEJORADO ----
 let map, marker;
 function initMap(){
@@ -33,24 +56,29 @@ function initMap(){
   if (!mapContainer) {
     mapContainer = document.createElement('div');
     mapContainer.id = 'map';
-    mapContainer.style.width = '100%';
-    mapContainer.style.height = '400px';
-    mapContainer.style.borderRadius = '8px';
-    mapContainer.style.marginBottom = '20px';
+    mapContainer.className = 'card';
+    mapContainer.innerHTML = '<h3>Ubicación GPS</h3>';
     
-    // Insertar el mapa después de las gráficas y antes del botón de históricos
-    const graficaPlotly = document.querySelector('#graficaPlotly');
-    const btnHistoricos = document.querySelector('#btnHistoricos');
+    const mapInner = document.createElement('div');
+    mapInner.id = 'map-inner';
+    mapInner.style.width = '100%';
+    mapInner.style.height = '400px';
+    mapInner.style.borderRadius = '8px';
     
-    if (btnHistoricos && graficaPlotly) {
-      graficaPlotly.parentNode.insertBefore(mapContainer, btnHistoricos);
-    } else if (graficaPlotly) {
-      graficaPlotly.parentNode.appendChild(mapContainer);
+    mapContainer.appendChild(mapInner);
+    
+    // Insertar el mapa después de las gráficas
+    const graficaPlotly = document.getElementById('graficaPlotly');
+    if (graficaPlotly) {
+      graficaPlotly.parentNode.insertBefore(mapContainer, graficaPlotly.nextSibling);
     }
   }
 
-  // Inicializar el mapa
-  map = L.map('map').setView([4.65, -74.1], 12);
+  // Inicializar el mapa en el contenedor correcto
+  const mapInner = document.getElementById('map-inner');
+  if (!mapInner) return;
+  
+  map = L.map('map-inner').setView([4.65, -74.1], 12);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
@@ -64,24 +92,10 @@ function initMap(){
   console.log('🗺️ Mapa inicializado correctamente');
 }
 
-// ---- REORDENAR BOTÓN HISTÓRICOS ----
-function moveHistoricosButton() {
-  const btnHistoricos = document.querySelector('#btnHistoricos');
-  if (btnHistoricos) {
-    // Mover al final del contenedor principal
-    const container = document.querySelector('.container');
-    if (container) {
-      container.appendChild(btnHistoricos);
-      console.log('🔽 Botón históricos movido al final');
-    }
-  }
-}
-
 // ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
   if (!map) {
-    console.log('⚠️ Mapa no está inicializado, reiniciando...');
-    initMap();
+    console.log('⚠️ Mapa no está inicializado');
     return;
   }
   
@@ -579,7 +593,7 @@ async function loadAllFromMongo(){
       updateChart(v);
     });
 
-    console.log('✅ Históricos cargados y mapa actualizado');
+    console.log('✅ Históricos cargados:', all.length, 'registros');
 
   } catch(e) {
     console.error('Error cargando histórico', e);
@@ -598,7 +612,7 @@ socket.on('disconnect', () => {
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
   
-  console.log('📥 Nuevo dato recibido:', data);
+  console.log('📥 Nuevo dato MQTT recibido:', data);
 
   // ACTUALIZAR MAPA EN TIEMPO REAL
   if(data.latitud && data.longitud){
@@ -609,6 +623,7 @@ socket.on('nuevoDato', data => {
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
+      console.log(`📈 ${v} actualizado: ${data[v]}`);
     }
   });
 });
@@ -617,17 +632,17 @@ socket.on('nuevoDato', data => {
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
   
-  // 1. Mover botón históricos al final
-  moveHistoricosButton();
+  // 1. Crear gráficas
+  createCharts();
   
   // 2. Inicializar mapa
   initMap();
   
-  // 3. Crear gráficas
-  createCharts();
+  // 3. Reorganizar elementos (gráficas -> mapa -> botón históricos)
+  reorganizarElementos();
   
   // 4. Cargar datos históricos
   await loadAllFromMongo();
   
-  console.log('✅ Aplicación completamente inicializada');
+  console.log('✅ Aplicación completamente inicializada y lista para datos MQTT');
 })();
