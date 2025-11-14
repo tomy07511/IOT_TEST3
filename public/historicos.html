@@ -1,3 +1,107 @@
+<!-- CONTENIDO METEOROLOGÍA -->
+<div id="meteoro-tab" class="tab-content">
+  <div class="container">
+    <!-- Indicadores de datos actuales -->
+    <div class="current-data">
+      <div class="data-card">
+        <div class="data-label">Temperatura Actual</div>
+        <div class="data-value" id="current-temp">-- °C</div>
+        <div class="data-label">Ambiente</div>
+      </div>
+      
+      <div class="data-card">
+        <div class="data-label">Velocidad del Viento</div>
+        <div class="data-value" id="current-wind">-- km/h</div>
+        <div class="data-label">Tiempo Real</div>
+      </div>
+      
+      <div class="data-card">
+        <div class="data-label">Humedad Ambiente</div>
+        <div class="data-value" id="current-humidity">-- %</div>
+        <div class="data-label">Relativa</div>
+      </div>
+      
+      <div class="data-card">
+        <div class="data-label">Direccion del Viento</div>
+        <div class="data-value" id="current-direction">--</div>
+        <div class="data-label">Rumbo actual</div>
+      </div>
+    </div>
+
+    <!-- Grid principal: Gráficas y Brújula -->
+    <div class="dashboard-grid">
+      <!-- Gráfica de Temperatura -->
+      <div class="card">
+        <h3>Temperatura Ambiente</h3>
+        <div class="graph-container" id="temp-chart">
+          <div class="loading">Cargando grafica de temperatura...</div>
+        </div>
+      </div>
+      
+      <!-- Gráfica de Velocidad del Viento -->
+      <div class="card">
+        <h3>Velocidad del Viento</h3>
+        <div class="graph-container" id="wind-chart">
+          <div class="loading">Cargando grafica de viento...</div>
+        </div>
+      </div>
+      
+      <!-- Brújula/Rosa de los Vientos -->
+      <div class="card">
+        <h3>Direccion del Viento</h3>
+        <div class="compass-container">
+          <div class="compass">
+            <div class="compass-rose"></div>
+            <div class="compass-needle" id="wind-needle"></div>
+            <div class="compass-center"></div>
+            <div class="compass-directions">
+              <div class="direction-n">N</div>
+              <div class="direction-e">E</div>
+              <div class="direction-s">S</div>
+              <div class="direction-w">O</div>
+            </div>
+          </div>
+          <div style="margin-top: 20px; text-align: center;">
+            <div class="data-label">Direccion actual:</div>
+            <div class="data-value" id="wind-direction-text">Norte (0°)</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Gráfica de Humedad -->
+      <div class="card">
+        <h3>Humedad Ambiente</h3>
+        <div class="graph-container" id="humidity-chart">
+          <div class="loading">Cargando grafica de humedad...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Información adicional (sin presión atmosférica) -->
+    <div class="card">
+      <h3>Resumen Meteorologico</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+        <div class="data-card">
+          <div class="data-label">Maxima del dia</div>
+          <div class="data-value">-- °C</div>
+        </div>
+        <div class="data-card">
+          <div class="data-label">Minima del dia</div>
+          <div class="data-value">-- °C</div>
+        </div>
+        <div class="data-card">
+          <div class="data-label">Rafaga maxima</div>
+          <div class="data-value">-- km/h</div>
+        </div>
+        <div class="data-card">
+          <div class="data-label">Humedad promedio</div>
+          <div class="data-value">-- %</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   // Script para Meteorología - Mostrar datos en tiempo real
   const socket = io();
@@ -82,6 +186,12 @@
     const now = new Date();
     const timeString = now.toLocaleTimeString();
     
+    console.log('📡 Datos recibidos para meteorología:', {
+      temperatura: data.temperatura,
+      vel_viento: data.vel_viento,
+      humedad: data.humedad
+    });
+    
     // Agregar nuevos datos
     timestamps.push(timeString);
     temperatureData.push(data.temperatura || 0);
@@ -112,7 +222,7 @@
   // Actualizar gráficas meteorológicas
   function updateMeteoroCharts() {
     // Actualizar gráfica de temperatura
-    if (document.getElementById('temp-chart')) {
+    if (document.getElementById('temp-chart') && timestamps.length > 0) {
       Plotly.react('temp-chart', [{
         x: timestamps,
         y: temperatureData,
@@ -127,7 +237,7 @@
     }
     
     // Actualizar gráfica de velocidad del viento
-    if (document.getElementById('wind-chart')) {
+    if (document.getElementById('wind-chart') && timestamps.length > 0) {
       Plotly.react('wind-chart', [{
         x: timestamps,
         y: windSpeedData,
@@ -142,7 +252,7 @@
     }
     
     // Actualizar gráfica de humedad
-    if (document.getElementById('humidity-chart')) {
+    if (document.getElementById('humidity-chart') && timestamps.length > 0) {
       Plotly.react('humidity-chart', [{
         x: timestamps,
         y: humidityData,
@@ -174,34 +284,49 @@
 
   // Escuchar datos del servidor
   socket.on('nuevoDato', function(data) {
-    console.log('📡 Dato meteorológico recibido:', data);
+    console.log('📡 Dato MQTT recibido en meteorología:', {
+      temperatura: data.temperatura,
+      vel_viento: data.vel_viento,
+      humedad: data.humedad
+    });
     updateMeteoroData(data);
   });
 
   // Inicializar cuando se active la pestaña de Meteorología
   function initMeteorologia() {
+    console.log('🌤️ Inicializando estación meteorológica...');
     // Inicializar con datos vacíos
     initMeteoroCharts();
     
     // Cargar algunos datos históricos iniciales (opcional)
     setTimeout(() => {
       // Simular algunos datos iniciales para que las gráficas no estén vacías
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 5; i++) {
         const mockData = {
           temperatura: 25 + Math.random() * 10,
-          vel_viento: Math.random() * 20,
-          humedad: 50 + Math.random() * 30
+          vel_viento: Math.random() * 5, // Velocidades bajas como en tus logs
+          humedad: 60 + Math.random() * 20 // Humedad entre 60-80%
         };
         updateMeteoroData(mockData);
       }
-    }, 1000);
+    }, 500);
   }
 
   // Inicializar cuando la pestaña esté activa
-  document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('meteoro-tab')) {
     // Verificar si estamos en la pestaña de Meteorología
-    if (document.getElementById('meteoro-tab').classList.contains('active')) {
+    const meteoroTab = document.getElementById('meteoro-tab');
+    if (meteoroTab.classList.contains('active')) {
       initMeteorologia();
     }
-  });
+    
+    // También inicializar cuando se cambie a esta pestaña
+    window.switchTab = function(tabName) {
+      // ... (tu código existente de switchTab)
+      
+      if (tabName === 'meteoro') {
+        setTimeout(initMeteorologia, 100);
+      }
+    }
+  }
 </script>
