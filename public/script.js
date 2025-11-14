@@ -70,9 +70,9 @@ function createChartControls(varName, container) {
   
   const zoomXSlider = document.createElement('input');
   zoomXSlider.type = 'range';
-  zoomXSlider.min = '25';
-  zoomXSlider.max = '400';
-  zoomXSlider.value = '100';
+  zoomXSlider.min = '10';
+  zoomXSlider.max = '200';
+  zoomXSlider.value = '50';
   zoomXSlider.style.cssText = `
     flex: 1;
     height: 8px;
@@ -82,11 +82,8 @@ function createChartControls(varName, container) {
     -webkit-appearance: none;
   `;
   
-  // Estilos personalizados para el slider
-  zoomXSlider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${(100/400)*100}%, #2a4a5a ${(100/400)*100}%, #2a4a5a 100%)`;
-  
   const zoomXValue = document.createElement('span');
-  zoomXValue.textContent = '100%';
+  zoomXValue.textContent = '50%';
   zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
   // Controles de Zoom Y
@@ -99,9 +96,9 @@ function createChartControls(varName, container) {
   
   const zoomYSlider = document.createElement('input');
   zoomYSlider.type = 'range';
-  zoomYSlider.min = '25';
-  zoomYSlider.max = '400';
-  zoomYSlider.value = '100';
+  zoomYSlider.min = '10';
+  zoomYSlider.max = '200';
+  zoomYSlider.value = '50';
   zoomYSlider.style.cssText = `
     flex: 1;
     height: 8px;
@@ -111,11 +108,8 @@ function createChartControls(varName, container) {
     -webkit-appearance: none;
   `;
   
-  // Estilos personalizados para el slider Y
-  zoomYSlider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${(100/400)*100}%, #2a4a5a ${(100/400)*100}%, #2a4a5a 100%)`;
-  
   const zoomYValue = document.createElement('span');
-  zoomYValue.textContent = '100%';
+  zoomYValue.textContent = '50%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
   
   // Botones con nuevo estilo
@@ -171,7 +165,9 @@ function createChartControls(varName, container) {
   
   // Event listeners para sliders con actualización visual
   function updateSliderBackground(slider, value) {
-    const percent = ((value - slider.min) / (slider.max - slider.min)) * 100;
+    const min = parseInt(slider.min);
+    const max = parseInt(slider.max);
+    const percent = ((value - min) / (max - min)) * 100;
     slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
   }
   
@@ -179,23 +175,23 @@ function createChartControls(varName, container) {
     const sliderValue = parseInt(e.target.value);
     zoomXValue.textContent = sliderValue + '%';
     updateSliderBackground(zoomXSlider, sliderValue);
-    applyMultiplierZoom(varName, 'x', sliderValue / 100);
+    applyMultiplierZoom(varName, 'x', sliderValue / 50); // 50% = 1.0x
   });
   
   zoomYSlider.addEventListener('input', (e) => {
     const sliderValue = parseInt(e.target.value);
     zoomYValue.textContent = sliderValue + '%';
     updateSliderBackground(zoomYSlider, sliderValue);
-    applyMultiplierZoom(varName, 'y', sliderValue / 100);
+    applyMultiplierZoom(varName, 'y', sliderValue / 50); // 50% = 1.0x
   });
   
   // Inicializar fondos de sliders
-  updateSliderBackground(zoomXSlider, 100);
-  updateSliderBackground(zoomYSlider, 100);
+  updateSliderBackground(zoomXSlider, 50);
+  updateSliderBackground(zoomYSlider, 50);
   
   // Event listeners para botones
-  btnActuales.addEventListener('click', () => zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue));
-  btnReset.addEventListener('click', () => resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue));
+  btnActuales.addEventListener('click', () => zoomToLatest(varName));
+  btnReset.addEventListener('click', () => resetZoom(varName));
   
   // Ensamblar controles
   zoomXDiv.appendChild(zoomXLabel);
@@ -306,12 +302,12 @@ function updateBaseRange(varName) {
   if (baseX && baseY) {
     zoomStates[varName].baseRange = { x: baseX, y: baseY };
     
-    // RESETEAR MULTIPLICADORES A 1.0 (100%) CUANDO HAY ZOOM MANUAL
+    // RESETEAR MULTIPLICADORES A 1.0 (50% en slider) CUANDO HAY ZOOM MANUAL
     zoomStates[varName].zoomX = 1.0;
     zoomStates[varName].zoomY = 1.0;
     
-    // Actualizar sliders visualmente
-    updateSliderDisplay(varName);
+    // Actualizar sliders visualmente a 50%
+    updateSliderDisplay(varName, 50, 50);
   }
 }
 
@@ -330,8 +326,7 @@ function setupPlotlyZoomListener(varName) {
 }
 
 // ---- ACTUALIZAR DISPLAY DE SLIDERS ----
-function updateSliderDisplay(varName) {
-  const state = zoomStates[varName];
+function updateSliderDisplay(varName, xValue = 50, yValue = 50) {
   const controlsDiv = charts[varName].div.previousElementSibling;
   
   if (controlsDiv) {
@@ -341,17 +336,14 @@ function updateSliderDisplay(varName) {
     const zoomYSlider = controlsDiv.querySelector('input:nth-child(5)');
     
     if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
-      const sliderValueX = Math.round(state.zoomX * 100);
-      const sliderValueY = Math.round(state.zoomY * 100);
-      
-      zoomXSlider.value = sliderValueX;
-      zoomYSlider.value = sliderValueY;
-      zoomXValue.textContent = sliderValueX + '%';
-      zoomYValue.textContent = sliderValueY + '%';
+      zoomXSlider.value = xValue;
+      zoomYSlider.value = yValue;
+      zoomXValue.textContent = xValue + '%';
+      zoomYValue.textContent = yValue + '%';
       
       // Actualizar fondos de los sliders
-      updateSliderBackground(zoomXSlider, sliderValueX);
-      updateSliderBackground(zoomYSlider, sliderValueY);
+      updateSliderBackground(zoomXSlider, xValue);
+      updateSliderBackground(zoomYSlider, yValue);
     }
   }
 }
@@ -364,8 +356,8 @@ function updateSliderBackground(slider, value) {
   slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
 }
 
-// ---- ZOOM A ÚLTIMOS DATOS ----
-function zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
+// ---- ZOOM A ÚLTIMOS DATOS CORREGIDO ----
+function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
   
@@ -387,7 +379,7 @@ function zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue)
       'yaxis.autorange': false
     });
     
-    // Actualizar base range y sliders
+    // Actualizar base range y resetear sliders a 50%
     setTimeout(() => {
       updateBaseRange(varName);
     }, 100);
@@ -395,7 +387,7 @@ function zoomToLatest(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue)
 }
 
 // ---- RESET ZOOM ----
-function resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
+function resetZoom(varName) {
   Plotly.relayout(charts[varName].div, {
     'xaxis.autorange': true,
     'yaxis.autorange': true
@@ -409,7 +401,8 @@ function resetZoom(varName, zoomXSlider, zoomXValue, zoomYSlider, zoomYValue) {
     zoomStates[varName].centerX = null;
     zoomStates[varName].centerY = null;
     
-    updateSliderDisplay(varName);
+    // Resetear sliders a 50%
+    updateSliderDisplay(varName, 50, 50);
   }, 100);
 }
 
