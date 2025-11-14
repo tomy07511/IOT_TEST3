@@ -827,4 +827,4 @@ function verificarElementos() {
   
   console.log('✅ Aplicación completamente inicializada');
   console.log('📡 Esperando datos MQTT en tiempo real...');
-})();
+})();//
