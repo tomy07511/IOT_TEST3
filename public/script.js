@@ -13,8 +13,9 @@ const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
 const zoomStates = {};
-let autoScrollEnabled = true;
+const autoScrollStates = {}; // Estado individual por gráfica
 
+// Inicializar estados
 variables.forEach(v => {
   dataBuffers[v] = {x: [], y: []};
   zoomStates[v] = {
@@ -24,58 +25,25 @@ variables.forEach(v => {
     centerX: null,
     centerY: null
   };
+  autoScrollStates[v] = true; // Auto-scroll activado por defecto para cada gráfica
 });
 
-// ---- TOGGLE AUTO-SCROLL ----
-function toggleAutoScroll() {
-  autoScrollEnabled = !autoScrollEnabled;
-  const btn = document.getElementById('toggleScrollBtn');
+// ---- TOGGLE AUTO-SCROLL INDIVIDUAL ----
+function toggleAutoScroll(varName) {
+  autoScrollStates[varName] = !autoScrollStates[varName];
+  const btn = document.getElementById(`autoScrollBtn_${varName}`);
   if (btn) {
-    btn.textContent = autoScrollEnabled ? '🔒 Auto-Scroll: ON' : '🔓 Auto-Scroll: OFF';
-    btn.style.background = autoScrollEnabled ? '#00e5ff' : '#ff7043';
-    btn.style.color = autoScrollEnabled ? '#002' : '#fff';
+    btn.textContent = autoScrollStates[varName] ? '🔒 Auto' : '🔓 Manual';
+    btn.title = autoScrollStates[varName] ? 'Auto-scroll activado' : 'Auto-scroll desactivado';
+    btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
+    btn.style.color = autoScrollStates[varName] ? '#002' : '#fff';
   }
-  console.log(`Auto-scroll ${autoScrollEnabled ? 'activado' : 'desactivado'}`);
-}
-
-function addAutoScrollToggle() {
-  const toggleBtn = document.createElement('button');
-  toggleBtn.id = 'toggleScrollBtn';
-  toggleBtn.textContent = '🔒 Auto-Scroll: ON';
-  toggleBtn.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 10px 15px;
-    background: #00e5ff;
-    color: #002;
-    border: none;
-    border-radius: 20px;
-    cursor: pointer;
-    font-weight: 600;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0,229,255,0.3);
-    transition: all 0.3s ease;
-  `;
-  toggleBtn.addEventListener('click', toggleAutoScroll);
-  
-  // Efecto hover
-  toggleBtn.addEventListener('mouseenter', () => {
-    toggleBtn.style.transform = 'translateY(-2px)';
-    toggleBtn.style.boxShadow = '0 6px 16px rgba(0,229,255,0.4)';
-  });
-  
-  toggleBtn.addEventListener('mouseleave', () => {
-    toggleBtn.style.transform = 'translateY(0)';
-    toggleBtn.style.boxShadow = '0 4px 12px rgba(0,229,255,0.3)';
-  });
-  
-  document.body.appendChild(toggleBtn);
+  console.log(`Auto-scroll ${varName}: ${autoScrollStates[varName] ? 'activado' : 'desactivado'}`);
 }
 
 // ---- AUTO-SCROLL A ÚLTIMOS DATOS ----
 function autoScrollToLatest(varName) {
-  if (!autoScrollEnabled) return;
+  if (!autoScrollStates[varName]) return;
   
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
@@ -104,17 +72,14 @@ function autoScrollToLatest(varName) {
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  // Verificar si el mapa ya existe
   let mapContainer = document.getElementById('map');
   if (!mapContainer) {
     console.log('❌ Contenedor del mapa no encontrado');
     return;
   }
   
-  // Limpiar el contenedor del mapa
   mapContainer.innerHTML = '';
   
-  // Crear elemento interno para el mapa
   const mapInner = document.createElement('div');
   mapInner.id = 'map-inner';
   mapInner.style.width = '100%';
@@ -123,7 +88,6 @@ function initMap(){
   
   mapContainer.appendChild(mapInner);
   
-  // Inicializar el mapa
   map = L.map('map-inner').setView([4.65, -74.1], 12);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -148,13 +112,9 @@ function updateMap(latitud, longitud, fecha) {
   if (latitud && longitud) {
     const newLatLng = [latitud, longitud];
     
-    // Actualizar marcador
     marker.setLatLng(newLatLng);
-    
-    // Mover el mapa suavemente a la nueva ubicación
     map.setView(newLatLng, 14);
     
-    // Actualizar popup con información
     const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
     marker.bindPopup(`
       <div style="text-align: center;">
@@ -250,51 +210,73 @@ function createChartControls(varName, container) {
   
   // Botones
   const buttonsDiv = document.createElement('div');
-  buttonsDiv.style.cssText = `display: flex; gap: 10px;`;
+  buttonsDiv.style.cssText = `display: flex; gap: 8px; flex-wrap: wrap;`;
+  
+  // Botón Auto-scroll individual
+  const btnAutoScroll = document.createElement('button');
+  btnAutoScroll.id = `autoScrollBtn_${varName}`;
+  btnAutoScroll.textContent = '🔒 Auto';
+  btnAutoScroll.title = 'Auto-scroll activado';
+  btnAutoScroll.style.cssText = `
+    padding: 6px 12px;
+    background: #00e5ff;
+    color: #002;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    min-width: 60px;
+  `;
   
   const btnActuales = document.createElement('button');
   btnActuales.textContent = 'Últimos';
   btnActuales.title = 'Zoom a los últimos datos';
   btnActuales.style.cssText = `
-    padding: 8px 16px;
+    padding: 6px 12px;
     background: transparent;
     color: white;
     border: 2px solid #00e5ff;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     transition: all 0.3s ease;
-    min-width: 80px;
+    min-width: 60px;
   `;
   
   const btnReset = document.createElement('button');
   btnReset.textContent = 'Reset';
   btnReset.title = 'Resetear zoom';
   btnReset.style.cssText = `
-    padding: 8px 16px;
+    padding: 6px 12px;
     background: transparent;
     color: white;
     border: 2px solid #00e5ff;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     transition: all 0.3s ease;
-    min-width: 80px;
+    min-width: 60px;
   `;
   
   // Efectos hover para botones
-  [btnActuales, btnReset].forEach(btn => {
+  [btnAutoScroll, btnActuales, btnReset].forEach(btn => {
     btn.addEventListener('mouseenter', () => {
-      btn.style.background = '#00e5ff';
-      btn.style.color = '#002';
+      if (btn !== btnAutoScroll) {
+        btn.style.background = '#00e5ff';
+        btn.style.color = '#002';
+      }
       btn.style.transform = 'translateY(-2px)';
     });
     
     btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'transparent';
-      btn.style.color = 'white';
+      if (btn !== btnAutoScroll) {
+        btn.style.background = 'transparent';
+        btn.style.color = 'white';
+      }
       btn.style.transform = 'translateY(0)';
     });
   });
@@ -326,6 +308,7 @@ function createChartControls(varName, container) {
   updateSliderBackground(zoomYSlider, 50);
   
   // Event listeners para botones
+  btnAutoScroll.addEventListener('click', () => toggleAutoScroll(varName));
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
   
@@ -338,6 +321,7 @@ function createChartControls(varName, container) {
   zoomYDiv.appendChild(zoomYSlider);
   zoomYDiv.appendChild(zoomYValue);
   
+  buttonsDiv.appendChild(btnAutoScroll);
   buttonsDiv.appendChild(btnActuales);
   buttonsDiv.appendChild(btnReset);
   
@@ -477,19 +461,16 @@ function updateSliderBackground(slider, value) {
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   
-  // Validaciones robustas
   if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
     console.log(`⚠️ No hay datos para ${varName}`);
     return;
   }
   
-  // Verificar que la gráfica existe y está lista
   if (!charts[varName] || !charts[varName].div) {
     console.log(`⚠️ Gráfica de ${varName} no está lista`);
     return;
   }
   
-  // Tomar últimos 15 datos (o menos si no hay suficientes)
   const dataCount = buf.x.length;
   const pointsToShow = Math.min(15, dataCount);
   
@@ -501,7 +482,6 @@ function zoomToLatest(varName) {
   const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
   const lastValues = buf.y.slice(-pointsToShow);
   
-  // Validar que las fechas sean válidas
   const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
   const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
   
@@ -510,13 +490,11 @@ function zoomToLatest(varName) {
     return;
   }
   
-  // Calcular rangos con padding
   const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
   const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
   const minY = Math.min(...validValues);
   const maxY = Math.max(...validValues);
   
-  // Agregar padding para mejor visualización
   const timeRange = maxX.getTime() - minX.getTime();
   const valueRange = maxY - minY;
   
@@ -525,7 +503,6 @@ function zoomToLatest(varName) {
   const paddedMinY = minY - valueRange * 0.1;
   const paddedMaxY = maxY + valueRange * 0.1;
   
-  // Aplicar zoom solo si los rangos son válidos
   if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
       !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
     
@@ -571,7 +548,6 @@ function updateChart(varName) {
     y: buf.y[i]
   })).sort((a, b) => a.x - b.x);
   
-  // Determinar el modo basado en la cantidad de datos
   const dataCount = combined.length;
   const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
   const markerSize = dataCount <= 30 ? 6 : 0;
@@ -661,8 +637,8 @@ function pushPoint(varName, fecha, value){
   
   updateChart(varName);
   
-  // AUTO-SCROLL SOLO SI ESTÁ ACTIVADO
-  if (autoScrollEnabled) {
+  // AUTO-SCROLL INDIVIDUAL POR GRÁFICA
+  if (autoScrollStates[varName]) {
     autoScrollToLatest(varName);
   }
 }
@@ -695,7 +671,6 @@ async function loadAllFromMongo(){
         }
       });
       
-      // Actualizar mapa con el último dato histórico que tenga coordenadas
       if (rec.latitud && rec.longitud) {
         updateMap(rec.latitud, rec.longitud, rec.fecha);
       }
@@ -782,12 +757,10 @@ socket.on('nuevoDato', data => {
   
   console.log('📥 Nuevo dato MQTT recibido:', data);
 
-  // ACTUALIZAR MAPA EN TIEMPO REAL
   if(data.latitud && data.longitud){
     updateMap(data.latitud, data.longitud, data.fecha);
   }
 
-  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
@@ -809,22 +782,14 @@ function verificarElementos() {
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
   
-  // Crear indicador de estado
   createStatusIndicator();
-  addAutoScrollToggle();
   
-  // Verificar elementos existentes
   verificarElementos();
   
-  // 1. Inicializar mapa
   initMap();
-  
-  // 2. Crear gráficas
   createCharts();
-  
-  // 3. Cargar datos históricos (COMPLETOS - como antes)
   await loadAllFromMongo();
   
   console.log('✅ Aplicación completamente inicializada');
   console.log('📡 Esperando datos MQTT en tiempo real...');
-})();//
+})();
