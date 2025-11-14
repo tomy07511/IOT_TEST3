@@ -415,7 +415,13 @@
         <div class="data-card">
           <div class="data-label">Velocidad del Viento</div>
           <div class="data-value" id="current-wind">-- km/h</div>
-          <div class="data-label">Promedio</div>
+          <div class="data-label">Tiempo Real</div>
+        </div>
+        
+        <div class="data-card">
+          <div class="data-label">Humedad Ambiente</div>
+          <div class="data-value" id="current-humidity">-- %</div>
+          <div class="data-label">Relativa</div>
         </div>
         
         <div class="data-card">
@@ -423,17 +429,11 @@
           <div class="data-value" id="current-direction">--</div>
           <div class="data-label">Rumbo actual</div>
         </div>
-        
-        <div class="data-card">
-          <div class="data-label">Humedad</div>
-          <div class="data-value" id="current-humidity">-- %</div>
-          <div class="data-label">Relativa</div>
-        </div>
       </div>
 
-      <!-- Grid principal: Graficas y Brujula -->
+      <!-- Grid principal: Gráficas y Brújula -->
       <div class="dashboard-grid">
-        <!-- Grafica de Temperatura -->
+        <!-- Gráfica de Temperatura -->
         <div class="card">
           <h3>Temperatura Ambiente</h3>
           <div class="graph-container" id="temp-chart">
@@ -441,7 +441,7 @@
           </div>
         </div>
         
-        <!-- Grafica de Velocidad del Viento -->
+        <!-- Gráfica de Velocidad del Viento -->
         <div class="card">
           <h3>Velocidad del Viento</h3>
           <div class="graph-container" id="wind-chart">
@@ -449,7 +449,7 @@
           </div>
         </div>
         
-        <!-- Brujula/Rosa de los Vientos -->
+        <!-- Brújula/Rosa de los Vientos -->
         <div class="card">
           <h3>Direccion del Viento</h3>
           <div class="compass-container">
@@ -471,16 +471,16 @@
           </div>
         </div>
         
-        <!-- Grafica de Humedad -->
+        <!-- Gráfica de Humedad -->
         <div class="card">
-          <h3>Humedad Relativa</h3>
+          <h3>Humedad Ambiente</h3>
           <div class="graph-container" id="humidity-chart">
             <div class="loading">Cargando grafica de humedad...</div>
           </div>
         </div>
       </div>
 
-      <!-- Informacion adicional -->
+      <!-- Información adicional (sin presión atmosférica) -->
       <div class="card">
         <h3>Resumen Meteorologico</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
@@ -497,8 +497,8 @@
             <div class="data-value">-- km/h</div>
           </div>
           <div class="data-card">
-            <div class="data-label">Presion atmosferica</div>
-            <div class="data-value">-- hPa</div>
+            <div class="data-label">Humedad promedio</div>
+            <div class="data-value">-- %</div>
           </div>
         </div>
       </div>
@@ -535,138 +535,5 @@
   </div>
 
   <script src="/script.js"></script>
-
-  <script>
-    // Script específico para Meteorología
-    function initMeteoroCharts() {
-      // Datos de ejemplo para las graficas
-      const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
-      
-      // Temperaturas de ejemplo
-      const temperatures = hours.map((_, i) => {
-        const baseTemp = 20;
-        const variation = Math.sin(i * Math.PI / 12) * 8;
-        return baseTemp + variation;
-      });
-      
-      // Velocidades de viento de ejemplo
-      const windSpeeds = hours.map((_, i) => {
-        const baseSpeed = 5;
-        const variation = Math.random() * 15;
-        return baseSpeed + variation;
-      });
-      
-      // Humedad de ejemplo
-      const humidity = hours.map((_, i) => {
-        const baseHumidity = 60;
-        const variation = Math.sin(i * Math.PI / 12) * 20;
-        return Math.max(30, Math.min(90, baseHumidity + variation));
-      });
-      
-      // Grafica de Temperatura
-      if (document.getElementById('temp-chart')) {
-        Plotly.newPlot('temp-chart', [{
-          x: hours,
-          y: temperatures,
-          type: 'scatter',
-          mode: 'lines+markers',
-          line: { color: '#ff7043', width: 3 },
-          marker: { size: 4 },
-          name: 'Temperatura'
-        }], {
-          title: '',
-          plot_bgcolor: 'transparent',
-          paper_bgcolor: 'transparent',
-          font: { color: '#eaf6f8' },
-          xaxis: { gridcolor: '#1e3a4c', title: 'Hora del dia' },
-          yaxis: { gridcolor: '#1e3a4c', title: 'Temperatura (°C)' },
-          margin: { t: 30, r: 30, b: 50, l: 50 }
-        });
-      }
-      
-      // Grafica de Velocidad del Viento
-      if (document.getElementById('wind-chart')) {
-        Plotly.newPlot('wind-chart', [{
-          x: hours,
-          y: windSpeeds,
-          type: 'scatter',
-          mode: 'lines+markers',
-          line: { color: '#00e5ff', width: 3 },
-          marker: { size: 4 },
-          name: 'Velocidad'
-        }], {
-          title: '',
-          plot_bgcolor: 'transparent',
-          paper_bgcolor: 'transparent',
-          font: { color: '#eaf6f8' },
-          xaxis: { gridcolor: '#1e3a4c', title: 'Hora del dia' },
-          yaxis: { gridcolor: '#1e3a4c', title: 'Velocidad (km/h)' },
-          margin: { t: 30, r: 30, b: 50, l: 50 }
-        });
-      }
-      
-      // Grafica de Humedad
-      if (document.getElementById('humidity-chart')) {
-        Plotly.newPlot('humidity-chart', [{
-          x: hours,
-          y: humidity,
-          type: 'scatter',
-          mode: 'lines+markers',
-          line: { color: '#4ecdc4', width: 3 },
-          marker: { size: 4 },
-          name: 'Humedad'
-        }], {
-          title: '',
-          plot_bgcolor: 'transparent',
-          paper_bgcolor: 'transparent',
-          font: { color: '#eaf6f8' },
-          xaxis: { gridcolor: '#1e3a4c', title: 'Hora del dia' },
-          yaxis: { gridcolor: '#1e3a4c', title: 'Humedad (%)' },
-          margin: { t: 30, r: 30, b: 50, l: 50 }
-        });
-      }
-    }
-    
-    // Simular datos actuales
-    function updateMeteoroData() {
-      if (!document.getElementById('current-temp')) return;
-      
-      const currentTemp = 22.5 + (Math.random() * 4 - 2);
-      const currentWind = 8 + (Math.random() * 10);
-      const currentHumidity = 65 + (Math.random() * 10 - 5);
-      
-      document.getElementById('current-temp').textContent = `${currentTemp.toFixed(1)} °C`;
-      document.getElementById('current-wind').textContent = `${currentWind.toFixed(1)} km/h`;
-      document.getElementById('current-humidity').textContent = `${currentHumidity.toFixed(0)} %`;
-      
-      // Simular direccion del viento (angulo en grados)
-      const windDirection = Math.floor(Math.random() * 360);
-      updateWindDirection(windDirection);
-    }
-    
-    // Actualizar brujula de direccion del viento
-    function updateWindDirection(degrees) {
-      const needle = document.getElementById('wind-needle');
-      const directionText = document.getElementById('wind-direction-text');
-      
-      if (!needle || !directionText) return;
-      
-      needle.style.transform = `translate(-50%, -50%) rotate(${degrees}deg)`;
-      
-      // Convertir grados a direccion cardinal
-      const directions = ['Norte', 'Noreste', 'Este', 'Sureste', 'Sur', 'Suroeste', 'Oeste', 'Noroeste'];
-      const index = Math.round(degrees / 45) % 8;
-      directionText.textContent = `${directions[index]} (${degrees}°)`;
-    }
-    
-    // Inicializar meteorologia cuando se active la pestaña
-    function initMeteorologia() {
-      initMeteoroCharts();
-      updateMeteoroData();
-      
-      // Simular actualizacion cada 5 segundos
-      setInterval(updateMeteoroData, 5000);
-    }
-  </script>
 </body>
 </html>
