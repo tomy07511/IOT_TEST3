@@ -26,8 +26,51 @@
     --text:#eaf6f8;
   }
   html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
-  header{padding:12px 18px;text-align:center;color:var(--accent);}
-  .container { width:95%; margin:14px auto; max-width:1200px; }
+  
+  /* NAVEGACIÓN */
+  .nav-tabs {
+    display: flex;
+    background: var(--card);
+    padding: 0;
+    border-bottom: 2px solid var(--muted);
+    margin-bottom: 0;
+  }
+  
+  .nav-tab {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border-bottom: 3px solid transparent;
+  }
+  
+  .nav-tab:hover {
+    background: var(--muted);
+    color: var(--accent);
+  }
+  
+  .nav-tab.active {
+    background: var(--muted);
+    color: var(--accent);
+    border-bottom: 3px solid var(--accent);
+  }
+  
+  header{
+    padding:12px 18px;
+    text-align:center;
+    color:var(--accent);
+    margin-bottom: 0;
+  }
+  
+  .container { 
+    width:95%; 
+    margin:14px auto; 
+    max-width:1200px; 
+  }
+  
   .card {
     background:var(--card);
     border-radius:12px;
@@ -35,72 +78,186 @@
     box-shadow:0 6px 18px rgba(0,229,255,0.06);
     margin-bottom:16px;
   }
+  
   h1,h2,h3{margin:6px 0;color:var(--accent)}
+  
+  /* CONTENIDO DE PESTAÑAS */
+  .tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  
+  .tab-content.active {
+    display: block;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
   
   /* MAPA AL FINAL - ÚLTIMO ELEMENTO */
   #map { 
     width:100%; 
     height:420px; 
     border-radius:8px; 
-    order: 3; /* Última posición */
   }
   
-  /* GRÁFICAS PRIMERO */
+  /* GRÁFICAS */
   #graficaPlotly { 
     width:100%; 
     min-height:480px; 
     border-radius:8px; 
-    order: 1; /* Primera posición */
   }
   
-  /* BOTÓN EN MEDIO */
-  #btnHistoricos {
-    display:inline-block;
-    margin:14px 0 40px 0;
-    padding:10px 16px;
+  /* ESTILOS PARA HISTÓRICOS (COPIADOS DE TU HTML) */
+  .controls{
+    padding:0 16px 8px 16px;
+    text-align: center;
+    margin-bottom: 15px;
+  }
+  
+  .controls select {
+    padding:8px 12px;
+    border-radius:6px;
+    border:1px solid var(--muted);
+    background:var(--card);
+    color:var(--text);
+    font-size: 14px;
+    margin-left: 10px;
+  }
+  
+  .controls label {
+    color:var(--accent);
+    font-weight: 600;
+  }
+  
+  #historicos-table{
+    width:95%;
+    margin:14px auto 40px;
+    background:var(--card);
+    border-collapse:collapse;
+    color:var(--text);
+    border-radius:8px;
+    overflow:hidden;
+    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+  }
+  
+  #historicos-table th,
+  #historicos-table td{
+    padding:12px;
+    text-align:center;
+    border-bottom:1px solid var(--muted);
+  }
+  
+  #historicos-table th{
+    background:linear-gradient(90deg,#004d55,#007f8a);
+    color:#eaf6f8;
+    font-weight: 600;
+  }
+  
+  #historicos-table tr:hover{
+    background:rgba(0,229,255,0.05);
+  }
+  
+  #pagination{
+    padding:15px;
+    text-align:center;
+  }
+  
+  #pagination button{
+    margin:4px;
+    padding:8px 12px;
+    border-radius:6px;
+    border:none;
     background:var(--accent);
     color:#002;
-    border:none;
-    border-radius:8px;
     cursor:pointer;
-    font-weight:600;
-    order: 2; /* Segunda posición */
+    font-weight: 600;
+    transition: all 0.3s ease;
   }
   
-  /* CONTENEDOR FLEX PARA REORDENAR */
-  .container {
-    display: flex;
-    flex-direction: column;
+  #pagination button:hover:not(:disabled){
+    background:#00bcd4;
+    transform: translateY(-2px);
+  }
+  
+  #pagination button:disabled{
+    background:#007f8a;
+    cursor: not-allowed;
+    transform: none;
   }
   
   @media (max-width:420px){
     #map{height:320px}
     #graficaPlotly{min-height:320px}
+    .nav-tab {
+      padding: 10px 16px;
+      font-size: 14px;
+    }
+    #historicos-table th,
+    #historicos-table td{
+      padding: 8px 6px;
+      font-size: 12px;
+    }
   }
 </style>
 </head>
 <body>
-  <header><h2>Panel de Sensores — IoT</h2></header>
+  <!-- NAVEGACIÓN POR PESTAÑAS -->
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('home')">🏠 Home</button>
+    <button class="nav-tab" onclick="switchTab('historicos')">📊 Históricos</button>
+  </div>
 
-  <div class="container">
-    <!-- PLOTLY - PRIMERO -->
-    <div class="card">
-      <h3>Serie de tiempos (Range Slider & Selector)</h3>
-      <div id="graficaPlotly"></div>
+  <header>
+    <h2>Panel de Sensores — IoT</h2>
+  </header>
+
+  <!-- CONTENIDO HOME -->
+  <div id="home-tab" class="tab-content active">
+    <div class="container">
+      <!-- PLOTLY - PRIMERO -->
+      <div class="card">
+        <h3>Serie de tiempos (Range Slider & Selector)</h3>
+        <div id="graficaPlotly"></div>
+      </div>
+
+      <!-- MAPA - AL FINAL -->
+      <div class="card">
+        <h3>Ubicación GPS</h3>
+        <div id="map"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTENIDO HISTÓRICOS (INTEGRADO DE TU HTML) -->
+  <div id="historicos-tab" class="tab-content">
+    <div class="controls">
+      <label for="tablaSelect">Variable:</label>
+      <select id="tablaSelect">
+        <option value="temperatura">Temperatura</option>
+        <option value="humedad">Humedad</option>
+        <option value="conductividad">Conductividad</option>
+        <option value="ph">pH</option>
+        <option value="nitrogeno">Nitrógeno</option>
+        <option value="fosforo">Fósforo</option>
+        <option value="potasio">Potasio</option>
+        <option value="bateria">Batería</option>
+        <option value="corriente">Corriente</option>
+      </select>
     </div>
 
-    <!-- BOTÓN HISTÓRICOS - SEGUNDO -->
-    <div style="text-align:center; order: 2;">
-      <button id="btnHistoricos" onclick="window.open('historicos.html', '_blank')">
-        Ver Datos Históricos Tabla
-      </button>
-    </div>
-
-    <!-- MAPA - AL FINAL -->
-    <div class="card" style="order: 3;">
-      <h3>Ubicación GPS</h3>
-      <div id="map"></div>
-    </div>
+    <table id="historicos-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Valor</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="pagination"></div>
   </div>
 
   <script src="/script.js"></script>

@@ -15,6 +15,11 @@ const charts = {};
 const zoomStates = {};
 const autoScrollStates = {};
 
+// Variables para históricos
+let allData = [];
+let currentPage = 1;
+const recordsPerPage = 20;
+
 // Inicializar estados
 variables.forEach(v => {
   dataBuffers[v] = {x: [], y: []};
@@ -28,46 +33,100 @@ variables.forEach(v => {
   autoScrollStates[v] = true; // Auto-scroll activado por defecto
 });
 
-// ---- TOGGLE AUTO-SCROLL INDIVIDUAL ----
-function toggleAutoScroll(varName) {
-  autoScrollStates[varName] = !autoScrollStates[varName];
-  const btn = document.getElementById(`autoScrollBtn_${varName}`);
-  if (btn) {
-    btn.textContent = autoScrollStates[varName] ? '🔒 Auto' : '🔓 Manual';
-    btn.title = autoScrollStates[varName] ? 'Auto-scroll activado' : 'Auto-scroll desactivado';
-    btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
-    btn.style.color = autoScrollStates[varName] ? '#002' : '#fff';
+// ---- SISTEMA DE PESTAÑAS ----
+function switchTab(tabName) {
+  // Ocultar todas las pestañas
+  document.querySelectorAll('.tab-content').forEach(tab => {
+    tab.classList.remove('active');
+  });
+  
+  // Remover activo de todos los botones
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  
+  // Mostrar pestaña seleccionada
+  document.getElementById(`${tabName}-tab`).classList.add('active');
+  
+  // Activar botón seleccionado
+  event.target.classList.add('active');
+  
+  // Si es la pestaña de históricos, cargar la tabla
+  if (tabName === 'historicos') {
+    loadHistoricalTable();
   }
-  console.log(`Auto-scroll ${varName}: ${autoScrollStates[varName] ? 'activado' : 'desactivado'}`);
+  
+  console.log(`🔀 Cambiando a pestaña: ${tabName}`);
 }
 
-// ---- AUTO-SCROLL A ÚLTIMOS DATOS ----
-function autoScrollToLatest(varName) {
-  // VERIFICACIÓN CORREGIDA: Solo hacer auto-scroll si está activado
-  if (!autoScrollStates[varName]) return;
+// ---- SISTEMA DE HISTÓRICOS ----
+function renderHistoricalTable() {
+  const key = document.getElementById('tablaSelect').value;
+  const tbody = document.querySelector('#historicos-table tbody');
+  const totalPages = Math.ceil(allData.length / recordsPerPage) || 1;
+  const start = (currentPage - 1) * recordsPerPage;
+  const end = start + recordsPerPage;
+  const slice = allData.slice(start, end);
   
-  const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
+  tbody.innerHTML = slice.map(d => {
+    let val = d[key];
+    if (val === undefined) {
+      for (const k in d) {
+        if (k.toLowerCase() === key.toLowerCase()) {
+          val = d[k];
+          break;
+        }
+      }
+    }
+    if (typeof val === 'number') val = val.toFixed(3);
+    return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val ?? ''}</td></tr>`;
+  }).join('');
   
-  // Tomar últimos 10 puntos para el auto-scroll
-  const lastPoints = buf.x.slice(-10).map(x => new Date(x));
-  const lastValues = buf.y.slice(-10);
-  
-  if (lastPoints.length === 0) return;
-  
-  const minX = new Date(Math.min(...lastPoints.map(x => x.getTime())));
-  const maxX = new Date(Math.max(...lastPoints.map(x => x.getTime())));
-  const minY = Math.min(...lastValues);
-  const maxY = Math.max(...lastValues);
-  
-  const padding = (maxY - minY) * 0.1 || 1;
-  
-  Plotly.relayout(charts[varName].div, {
-    'xaxis.range': [minX, maxX],
-    'yaxis.range': [minY - padding, maxY + padding],
-    'xaxis.autorange': false,
-    'yaxis.autorange': false
-  });
+  const pag = document.getElementById('pagination');
+  pag.innerHTML = '';
+  for (let i = 1; i <= totalPages; i++) {
+    const b = document.createElement('button');
+    b.textContent = i;
+    b.disabled = i === currentPage;
+    b.onclick = () => {
+      currentPage = i;
+      renderHistoricalTable();
+    };
+    pag.appendChild(b);
+  }
+}
+
+async function loadHistoricalTable() {
+  try {
+    // Mostrar loading en la tabla
+    const tbody = document.querySelector('#historicos-table tbody');
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 40px; color: var(--accent);">🔄 Cargando datos históricos...</td></tr>';
+    
+    const res = await fetch('/api/data/all');
+    if (!res.ok) throw new Error('Error ' + res.status);
+    
+    const json = await res.json();
+    allData = json.map(d => ({...d, fecha: new Date(d.fecha)})).sort((a, b) => b.fecha - a.fecha);
+    
+    renderHistoricalTable();
+    console.log('📊 Tabla histórica cargada:', allData.length, 'registros');
+    
+  } catch (e) {
+    console.error('❌ Error cargando tabla histórica:', e);
+    const tbody = document.querySelector('#historicos-table tbody');
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 40px; color: #ff7043;">❌ Error cargando datos históricos</td></tr>';
+  }
+}
+
+// ---- INICIALIZAR EVENT LISTENERS PARA HISTÓRICOS ----
+function initHistoricalEvents() {
+  const select = document.getElementById('tablaSelect');
+  if (select) {
+    select.onchange = () => {
+      currentPage = 1;
+      renderHistoricalTable();
+    };
+  }
 }
 
 // ---- INDICADOR DE CARGA ----
@@ -111,6 +170,48 @@ function hideLoadingIndicator() {
       if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
     }, 500);
   }
+}
+
+// ---- TOGGLE AUTO-SCROLL INDIVIDUAL ----
+function toggleAutoScroll(varName) {
+  autoScrollStates[varName] = !autoScrollStates[varName];
+  const btn = document.getElementById(`autoScrollBtn_${varName}`);
+  if (btn) {
+    btn.textContent = autoScrollStates[varName] ? '🔒 Auto' : '🔓 Manual';
+    btn.title = autoScrollStates[varName] ? 'Auto-scroll activado' : 'Auto-scroll desactivado';
+    btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
+    btn.style.color = autoScrollStates[varName] ? '#002' : '#fff';
+  }
+  console.log(`Auto-scroll ${varName}: ${autoScrollStates[varName] ? 'activado' : 'desactivado'}`);
+}
+
+// ---- AUTO-SCROLL A ÚLTIMOS DATOS ----
+function autoScrollToLatest(varName) {
+  // VERIFICACIÓN CORREGIDA: Solo hacer auto-scroll si está activado
+  if (!autoScrollStates[varName]) return;
+  
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  // Tomar últimos 10 puntos para el auto-scroll
+  const lastPoints = buf.x.slice(-10).map(x => new Date(x));
+  const lastValues = buf.y.slice(-10);
+  
+  if (lastPoints.length === 0) return;
+  
+  const minX = new Date(Math.min(...lastPoints.map(x => x.getTime())));
+  const maxX = new Date(Math.max(...lastPoints.map(x => x.getTime())));
+  const minY = Math.min(...lastValues);
+  const maxY = Math.max(...lastValues);
+  
+  const padding = (maxY - minY) * 0.1 || 1;
+  
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.range': [minX, maxX],
+    'yaxis.range': [minY - padding, maxY + padding],
+    'xaxis.autorange': false,
+    'yaxis.autorange': false
+  });
 }
 
 // ---- INIT MAP ----
@@ -820,7 +921,7 @@ socket.on('nuevoDato', data => {
 
 // ---- VERIFICAR ELEMENTOS ----
 function verificarElementos() {
-  const elementos = ['map', 'btnHistoricos', 'graficaPlotly'];
+  const elementos = ['map', 'graficaPlotly', 'historicos-table'];
   elementos.forEach(id => {
     const elemento = document.getElementById(id);
     console.log(`${id}:`, elemento ? '✅ Encontrado' : '❌ No encontrado');
@@ -836,6 +937,9 @@ function verificarElementos() {
   
   updateLoadingText('Verificando componentes...');
   verificarElementos();
+  
+  updateLoadingText('Inicializando eventos...');
+  initHistoricalEvents(); // Inicializar eventos de históricos
   
   updateLoadingText('Inicializando mapa...');
   initMap();
