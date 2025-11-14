@@ -21,7 +21,8 @@ variables.forEach(v => {
     zoomX: 1.0,
     zoomY: 1.0,
     centerX: null,
-    centerY: null
+    centerY: null,
+    paused: false // <-- si true, no actualizar visual mientras el usuario está interactuando
   };
 });
 
@@ -233,8 +234,16 @@ function createChartControls(varName, container) {
   updateSliderBackground(zoomXSlider, 50);
   updateSliderBackground(zoomYSlider, 50);
   
-  btnActuales.addEventListener('click', () => zoomToLatest(varName));
-  btnReset.addEventListener('click', () => resetZoom(varName));
+  btnActuales.addEventListener('click', () => {
+    zoomToLatest(varName);
+    // Al pedir "Últimos" reanudamos la vista en vivo
+    zoomStates[varName].paused = false;
+  });
+  btnReset.addEventListener('click', () => {
+    resetZoom(varName);
+    // Reset también reanuda
+    zoomStates[varName].paused = false;
+  });
   
   zoomXDiv.appendChild(zoomXLabel);
   zoomXDiv.appendChild(zoomXSlider);
@@ -340,11 +349,15 @@ function updateBaseRange(varName) {
 function setupPlotlyZoomListener(varName) {
   const container = charts[varName].div;
   
+  // Escuchamos relayout para detectar zoom/pan manual
   container.on('plotly_relayout', function(eventdata) {
-    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
-      setTimeout(() => {
-        updateBaseRange(varName);
-      }, 100);
+    // si se han modificado los rangos, suponemos interacción del usuario
+    if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]'] || eventdata['xaxis.range']) {
+      // activamos pausa para esa variable
+      zoomStates[varName].paused = true;
+      // actualizamos baseRange para que sliders y multiplicadores tengan referencia
+      setTimeout(() => { updateBaseRange(varName); }, 100);
+      console.log(`✋ Usuario interactuando con ${varName} → streaming en pausa`);
     }
   });
 }
@@ -463,7 +476,7 @@ function resetZoom(varName) {
 // ---- ACTUALIZAR GRÁFICA CON PUNTOS (CORREGIDA) ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
-  if (buf.x.length === 0) return;
+  if (!buf || buf.x.length === 0) return;
   
   const combined = buf.x.map((x, i) => ({ 
     x: new Date(x), 
@@ -490,7 +503,6 @@ function updateChart(varName) {
     connectgaps: false
   };
   
-  // CORRECCIÓN: Usar charts[varName] en lugar de charts[v]
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
   
   console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
@@ -558,23 +570,66 @@ function pushPoint(varName, fecha, value){
     buf.y.shift();
   }
   
+  // Si el usuario está en pausa (zoom/pan), no redibujamos para no interferir
+  if (zoomStates[varName].paused) {
+    // guardamos los datos en buffer pero no actualizamos la vista
+    console.log(`⏸️ ${varName} en pausa — datos agregados al buffer pero sin redraw`);
+    return;
+  }
+  
   updateChart(varName);
 }
 
 // ---- CARGAR HISTORICO ----
 async function loadAllFromMongo(){
   try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const all = await res.json();
-    
-    if (!all || !Array.isArray(all)) {
-      console.log('⚠️ No se recibieron datos históricos');
-      return;
-    }
-    
+    // Intentamos preferir el histórico enviado por Socket.IO (evento 'historico').
+    // Si no llega en unos 400ms, fallback a /api/data/all
+    let historicalHandled = false;
+
+    const timeout = setTimeout(async () => {
+      if (!historicalHandled) {
+        console.log('⏳ No llegó evento "historico", uso /api/data/all como fallback');
+        try {
+          const res = await fetch('/api/data/all');
+          if(!res.ok) throw new Error('Error '+res.status);
+          let all = await res.json();
+          if (!Array.isArray(all)) {
+            console.log('⚠️ /api/data/all no devolvió un array');
+            return;
+          }
+          // aseguramos orden cronológico ascendente
+          all.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+          applyHistoricalArray(all);
+        } catch(e) {
+          console.error('❌ Error fallback histórico:', e);
+        }
+      }
+    }, 400);
+
+    // Handler si llega por socket
+    socket.once('historico', (arr) => {
+      clearTimeout(timeout);
+      historicalHandled = true;
+      if (!arr || !Array.isArray(arr)) {
+        console.log('⚠️ Evento "historico" inválido o vacío');
+        return;
+      }
+      // ordenar ascendente por fecha (por si el servidor envió invertido)
+      arr.sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+      applyHistoricalArray(arr);
+    });
+
+  } catch(e) {
+    console.error('❌ Error cargando histórico:', e);
+  }
+}
+
+// aplica un array histórico al buffer y actualiza (sin alterar pausas de usuario)
+function applyHistoricalArray(all) {
+  try {
     console.log('📥 Cargando históricos:', all.length, 'registros');
-    
+
     variables.forEach(v => {
       dataBuffers[v].x = [];
       dataBuffers[v].y = [];
@@ -588,20 +643,20 @@ async function loadAllFromMongo(){
           dataBuffers[v].y.push(rec[v]);
         }
       });
-      
+
       if (rec.latitud && rec.longitud) {
         updateMap(rec.latitud, rec.longitud, rec.fecha);
       }
     });
 
+    // Redibujar todas las gráficas (solo si no están en pausa)
     variables.forEach(v => {
-      updateChart(v);
+      if (!zoomStates[v].paused) updateChart(v);
     });
 
     console.log('✅ Históricos cargados correctamente');
-
   } catch(e) {
-    console.error('❌ Error cargando histórico:', e);
+    console.error('❌ Error aplicando históricos:', e);
   }
 }
 
@@ -614,15 +669,19 @@ socket.on('disconnect', () => {
   console.log('🔌 Socket desconectado');
 });
 
+// Nuevo: si el servidor emite 'historico' lo manejamos en loadAllFromMongo() con socket.once
+
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
   
   console.log('📥 Nuevo dato MQTT recibido:', data);
 
+  // ACTUALIZAR MAPA EN TIEMPO REAL
   if(data.latitud && data.longitud){
     updateMap(data.latitud, data.longitud, data.fecha);
   }
 
+  // ACTUALIZAR GRÁFICAS EN TIEMPO REAL
   variables.forEach(v => {
     if(data[v] !== undefined && data[v] !== null) {
       pushPoint(v, fecha, data[v]);
