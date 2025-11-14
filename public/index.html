@@ -46,7 +46,22 @@
     transition: all 0.3s ease;
     border-bottom: 3px solid transparent;
   }
-  
+      /* BOLITA BLANCA PARA SLIDERS DE ZOOM */
+    .controls input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      background: #ffffff;
+      border: 2px solid #00e5ff;
+    }
+
+    .controls input[type="range"]::-moz-range-thumb {
+      background: #ffffff;
+      border: 2px solid #00e5ff;
+    }
+
+    .controls input[type="range"]::-ms-thumb {
+      background: #ffffff;
+      border: 2px solid #00e5ff;
+    }
   .nav-tab:hover {
     background: var(--muted);
     color: var(--accent);
@@ -206,8 +221,8 @@
 <body>
   <!-- NAVEGACIÓN POR PESTAÑAS -->
   <div class="nav-tabs">
-    <button class="nav-tab active" onclick="switchTab('home')">🏠 Home</button>
-    <button class="nav-tab" onclick="switchTab('historicos')">📊 Históricos</button>
+    <button class="nav-tab active" onclick="switchTab('home')"> Home</button>
+    <button class="nav-tab" onclick="switchTab('historicos')"> Históricos</button>
   </div>
 
   <header>

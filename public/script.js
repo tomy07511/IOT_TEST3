@@ -56,7 +56,7 @@ function switchTab(tabName) {
     loadHistoricalTable();
   }
   
-  console.log(`🔀 Cambiando a pestaña: ${tabName}`);
+  console.log(` Cambiando a pestaña: ${tabName}`);
 }
 
 // ---- SISTEMA DE HISTÓRICOS ----
@@ -109,7 +109,7 @@ async function loadHistoricalTable() {
     allData = json.map(d => ({...d, fecha: new Date(d.fecha)})).sort((a, b) => b.fecha - a.fecha);
     
     renderHistoricalTable();
-    console.log('📊 Tabla histórica cargada:', allData.length, 'registros');
+    console.log(' Tabla histórica cargada:', allData.length, 'registros');
     
   } catch (e) {
     console.error('❌ Error cargando tabla histórica:', e);
@@ -148,7 +148,7 @@ function createLoadingIndicator() {
   `;
   
   loadingDiv.innerHTML = `
-    <div style="color: var(--accent); margin-bottom: 10px; font-weight: bold;">🔄 Cargando datos...</div>
+    <div style="color: var(--accent); margin-bottom: 10px; font-weight: bold;"> Cargando datos...</div>
     <div style="color: var(--text); font-size: 12px;" id="loading-text">Inicializando aplicación</div>
   `;
   
@@ -177,7 +177,7 @@ function toggleAutoScroll(varName) {
   autoScrollStates[varName] = !autoScrollStates[varName];
   const btn = document.getElementById(`autoScrollBtn_${varName}`);
   if (btn) {
-    btn.textContent = autoScrollStates[varName] ? '🔒 Auto' : '🔓 Manual';
+    btn.textContent = autoScrollStates[varName] ? ' Auto' : ' Manual';
     btn.title = autoScrollStates[varName] ? 'Auto-scroll activado' : 'Auto-scroll desactivado';
     btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
     btn.style.color = autoScrollStates[varName] ? '#002' : '#fff';
@@ -244,13 +244,13 @@ function initMap(){
     .bindPopup('Esperando datos GPS...')
     .openPopup();
   
-  console.log('🗺️ Mapa inicializado correctamente');
+  console.log(' Mapa inicializado correctamente');
 }
 
 // ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
   if (!map) {
-    console.log('⚠️ Mapa no está inicializado');
+    console.log('Mapa no está inicializado');
     return;
   }
   
@@ -270,7 +270,7 @@ function updateMap(latitud, longitud, fecha) {
       </div>
     `).openPopup();
     
-    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
+    console.log(`Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
   }
 }
 
@@ -360,7 +360,7 @@ function createChartControls(varName, container) {
   // Botón Auto-scroll individual
   const btnAutoScroll = document.createElement('button');
   btnAutoScroll.id = `autoScrollBtn_${varName}`;
-  btnAutoScroll.textContent = '🔒 Auto';
+  btnAutoScroll.textContent = ' Auto';
   btnAutoScroll.title = 'Auto-scroll activado';
   btnAutoScroll.style.cssText = `
     padding: 6px 12px;
@@ -607,12 +607,12 @@ function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
   
   if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
-    console.log(`⚠️ No hay datos para ${varName}`);
+    console.log(` No hay datos para ${varName}`);
     return;
   }
   
   if (!charts[varName] || !charts[varName].div) {
-    console.log(`⚠️ Gráfica de ${varName} no está lista`);
+    console.log(` Gráfica de ${varName} no está lista`);
     return;
   }
   
@@ -620,7 +620,7 @@ function zoomToLatest(varName) {
   const pointsToShow = Math.min(15, dataCount);
   
   if (pointsToShow === 0) {
-    console.log(`⚠️ No hay datos suficientes para ${varName}`);
+    console.log(` No hay datos suficientes para ${varName}`);
     return;
   }
   
@@ -631,7 +631,7 @@ function zoomToLatest(varName) {
   const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
   
   if (validDates.length === 0 || validValues.length === 0) {
-    console.log(`⚠️ Datos inválidos para ${varName}`);
+    console.log(` Datos inválidos para ${varName}`);
     return;
   }
   
@@ -658,10 +658,10 @@ function zoomToLatest(varName) {
       'yaxis.autorange': false
     });
     
-    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
+    console.log(` Zoom a últimos ${pointsToShow} datos de ${varName}`);
     
   } else {
-    console.log(`❌ Rangos inválidos para ${varName}`);
+    console.log(` Rangos inválidos para ${varName}`);
   }
 }
 
@@ -715,7 +715,7 @@ function updateChart(varName) {
   
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
   
-  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
+  console.log(` ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
 
 // ---- CREAR GRAFICAS ----
@@ -798,11 +798,11 @@ async function loadAllFromMongo(){
     const all = await res.json();
     
     if (!all || !Array.isArray(all)) {
-      console.log('⚠️ No se recibieron datos históricos');
+      console.log(' No se recibieron datos históricos');
       return;
     }
     
-    console.log('📥 Cargando históricos:', all.length, 'registros');
+    console.log(' Cargando históricos:', all.length, 'registros');
     
     // Limpiar buffers primero
     variables.forEach(v => {
