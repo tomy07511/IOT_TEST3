@@ -37,27 +37,23 @@
   }
   h1,h2,h3{margin:6px 0;color:var(--accent)}
   
-  /* MOVER MAPA MÁS ABAJO */
+  /* MAPA AL FINAL - ÚLTIMO ELEMENTO */
   #map { 
     width:100%; 
     height:420px; 
     border-radius:8px; 
-    order: 2; /* Mover después de las gráficas */
+    order: 3; /* Última posición */
   }
   
+  /* GRÁFICAS PRIMERO */
   #graficaPlotly { 
     width:100%; 
-    height:480px; 
+    min-height:480px; 
     border-radius:8px; 
-    order: 1; /* Poner primero */
+    order: 1; /* Primera posición */
   }
   
-  /* CONTENEDOR FLEX PARA REORDENAR */
-  .container {
-    display: flex;
-    flex-direction: column;
-  }
-  
+  /* BOTÓN EN MEDIO */
   #btnHistoricos {
     display:inline-block;
     margin:14px 0 40px 0;
@@ -68,12 +64,18 @@
     border-radius:8px;
     cursor:pointer;
     font-weight:600;
-    order: 3; /* Último */
+    order: 2; /* Segunda posición */
+  }
+  
+  /* CONTENEDOR FLEX PARA REORDENAR */
+  .container {
+    display: flex;
+    flex-direction: column;
   }
   
   @media (max-width:420px){
     #map{height:320px}
-    #graficaPlotly{height:320px}
+    #graficaPlotly{min-height:320px}
   }
 </style>
 </head>
@@ -81,23 +83,23 @@
   <header><h2>Panel de Sensores — IoT</h2></header>
 
   <div class="container">
-    <!-- PLOTLY -->
+    <!-- PLOTLY - PRIMERO -->
     <div class="card">
       <h3>Serie de tiempos (Range Slider & Selector)</h3>
       <div id="graficaPlotly"></div>
     </div>
 
-    <!-- MAPA ABAJO DE LAS GRÁFICAS -->
-    <div class="card">
-      <h3>Ubicación GPS</h3>
-      <div id="map"></div>
-    </div>
-
-    <!-- BOTÓN HISTÓRICOS AL FINAL -->
-    <div style="text-align:center;">
+    <!-- BOTÓN HISTÓRICOS - SEGUNDO -->
+    <div style="text-align:center; order: 2;">
       <button id="btnHistoricos" onclick="window.open('historicos.html', '_blank')">
         Ver Datos Históricos Tabla
       </button>
+    </div>
+
+    <!-- MAPA - AL FINAL -->
+    <div class="card" style="order: 3;">
+      <h3>Ubicación GPS</h3>
+      <div id="map"></div>
     </div>
   </div>
 
