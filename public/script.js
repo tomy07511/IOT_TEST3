@@ -28,9 +28,12 @@ variables.forEach(v => {
 // ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  const mapContainer = document.getElementById('map');
-  if (!mapContainer) return;
-
+  let mapContainer = document.getElementById('map');
+  if (!mapContainer) {
+    console.log('❌ Contenedor del mapa no encontrado');
+    return;
+  }
+  
   mapContainer.innerHTML = '';
   const mapInner = document.createElement('div');
   mapInner.id = 'map-inner';
@@ -38,22 +41,27 @@ function initMap(){
   mapInner.style.height = '400px';
   mapInner.style.borderRadius = '8px';
   mapContainer.appendChild(mapInner);
-
+  
   map = L.map('map-inner').setView([4.65, -74.1], 12);
-
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
     maxZoom: 18
   }).addTo(map);
-
+  
   marker = L.marker([4.65, -74.1]).addTo(map)
     .bindPopup('Esperando datos GPS...')
     .openPopup();
+  
+  console.log('🗺️ Mapa inicializado correctamente');
 }
 
 // ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
-  if (!map) return;
+  if (!map) {
+    console.log('⚠️ Mapa no está inicializado');
+    return;
+  }
+  
   if (latitud && longitud) {
     const newLatLng = [latitud, longitud];
     marker.setLatLng(newLatLng);
@@ -67,6 +75,7 @@ function updateMap(latitud, longitud, fecha) {
         <small>${fechaStr}</small>
       </div>
     `).openPopup();
+    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
   }
 }
 
@@ -85,7 +94,7 @@ function createChartControls(varName, container) {
     border: 1px solid #0f3a45;
     flex-wrap: wrap;
   `;
-
+  
   const title = document.createElement('span');
   title.textContent = varName;
   title.style.cssText = `
@@ -95,34 +104,34 @@ function createChartControls(varName, container) {
     text-transform: capitalize;
     font-size: 14px;
   `;
-
+  
   const zoomXDiv = document.createElement('div');
   zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   const zoomXLabel = document.createElement('span'); zoomXLabel.textContent = 'Zoom X:'; zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
   const zoomXSlider = document.createElement('input'); zoomXSlider.type = 'range'; zoomXSlider.min = '10'; zoomXSlider.max = '200'; zoomXSlider.value = '50'; zoomXSlider.style.cssText = `flex:1;height:8px;border-radius:4px;background:#2a4a5a;outline:none;-webkit-appearance:none;`;
   const zoomXValue = document.createElement('span'); zoomXValue.textContent = '50%'; zoomXValue.style.cssText = `color:#00e5ff;font-size:12px;min-width:40px;font-weight:600;`;
-
+  
   const zoomYDiv = document.createElement('div');
   zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
   const zoomYLabel = document.createElement('span'); zoomYLabel.textContent = 'Zoom Y:'; zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
   const zoomYSlider = document.createElement('input'); zoomYSlider.type = 'range'; zoomYSlider.min = '10'; zoomYSlider.max = '200'; zoomYSlider.value = '50'; zoomYSlider.style.cssText = `flex:1;height:8px;border-radius:4px;background:#2a4a5a;outline:none;-webkit-appearance:none;`;
   const zoomYValue = document.createElement('span'); zoomYValue.textContent = '50%'; zoomYValue.style.cssText = `color:#00e5ff;font-size:12px;min-width:40px;font-weight:600;`;
-
-  // Botones
-  const buttonsDiv = document.createElement('div'); buttonsDiv.style.cssText = `display:flex;gap:10px;`;
+  
+  const buttonsDiv = document.createElement('div');
+  buttonsDiv.style.cssText = `display:flex;gap:10px;`;
   const btnActuales = document.createElement('button'); btnActuales.textContent = 'Últimos'; btnActuales.title = 'Zoom a los últimos datos'; btnActuales.style.cssText = `padding:8px 16px;background:transparent;color:white;border:2px solid #00e5ff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-width:80px;transition: all 0.3s ease;`;
   const btnReset = document.createElement('button'); btnReset.textContent = 'Reset'; btnReset.title = 'Resetear zoom'; btnReset.style.cssText = `padding:8px 16px;background:transparent;color:white;border:2px solid #00e5ff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-width:80px;transition: all 0.3s ease;`;
-
+  
   [btnActuales, btnReset].forEach(btn => {
     btn.addEventListener('mouseenter', () => { btn.style.background = '#00e5ff'; btn.style.color = '#002'; btn.style.transform = 'translateY(-2px)'; });
     btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; btn.style.color = 'white'; btn.style.transform = 'translateY(0)'; });
   });
 
-  // ---- CORRECCIÓN BOTÓN ÚLTIMOS 15 ----
+  // ---- UNICA MODIFICACIÓN: BOTÓN ÚLTIMOS 15 ----
   btnActuales.addEventListener('click', () => {
-    zoomToLatest(varName);
-    updateChart(varName); // fuerza ver los puntos inmediatamente
+    zoomToLatest(varName); // zoom a últimos 15 datos
   });
+
   btnReset.addEventListener('click', () => resetZoom(varName));
 
   function updateSliderBackground(slider, value){
@@ -147,114 +156,137 @@ function createChartControls(varName, container) {
   return { zoomXSlider, zoomXValue, zoomYSlider, zoomYValue };
 }
 
+// ---- APLICAR ZOOM COMO MULTIPLICADOR ----
+function applyMultiplierZoom(varName, axis, multiplier) {
+  const state = zoomStates[varName];
+  if (!state.baseRange) updateBaseRange(varName);
+  if (!state.baseRange) return;
+  axis==='x'?state.zoomX=multiplier:state.zoomY=multiplier;
+  applyCombinedZoom(varName);
+}
+
+// ---- APLICAR ZOOM COMBINADO ----
+function applyCombinedZoom(varName){
+  const state = zoomStates[varName]; const base = state.baseRange; if(!base) return;
+  const visibleRangeX = (base.x[1]-base.x[0])/state.zoomX;
+  const visibleRangeY = (base.y[1]-base.y[0])/state.zoomY;
+  const centerX = state.centerX || (base.x[0]+base.x[1])/2;
+  const centerY = state.centerY || (base.y[0]+base.y[1])/2;
+  const newMinX=centerX-visibleRangeX/2; const newMaxX=centerX+visibleRangeX/2;
+  const newMinY=centerY-visibleRangeY/2; const newMaxY=centerY+visibleRangeY/2;
+  Plotly.relayout(charts[varName].div,{
+    'xaxis.range':[new Date(newMinX),new Date(newMaxX)],
+    'yaxis.range':[newMinY,newMaxY],
+    'xaxis.autorange':false,'yaxis.autorange':false
+  });
+}
+
+// ---- ACTUALIZAR RANGO BASE ----
+function updateBaseRange(varName){
+  const graphDiv = charts[varName].div;
+  const buf = dataBuffers[varName];
+  if(buf.x.length===0) return;
+  let baseX = [Math.min(...buf.x.map(x=>new Date(x).getTime())), Math.max(...buf.x.map(x=>new Date(x).getTime()))];
+  let baseY = [Math.min(...buf.y), Math.max(...buf.y)];
+  zoomStates[varName].baseRange={x:baseX,y:baseY};
+  zoomStates[varName].zoomX=1.0; zoomStates[varName].zoomY=1.0;
+  zoomStates[varName].centerX=(baseX[0]+baseX[1])/2;
+  zoomStates[varName].centerY=(baseY[0]+baseY[1])/2;
+  updateSliderDisplay(varName,50,50);
+}
+
+// ---- ZOOM A ÚLTIMOS DATOS ----
+function zoomToLatest(varName){
+  const buf = dataBuffers[varName];
+  if(buf.x.length===0) return;
+  const last15x = buf.x.slice(-15).map(x=>new Date(x));
+  const last15y = buf.y.slice(-15);
+  if(last15x.length>0){
+    const minX=new Date(Math.min(...last15x.map(d=>d.getTime())));
+    const maxX=new Date(Math.max(...last15x.map(d=>d.getTime())));
+    const minY=Math.min(...last15y);
+    const maxY=Math.max(...last15y);
+    const padding=(maxY-minY)*0.1||1;
+    Plotly.relayout(charts[varName].div,{
+      'xaxis.range':[minX,maxX],
+      'yaxis.range':[minY-padding,maxY+padding],
+      'xaxis.autorange':false,'yaxis.autorange':false
+    });
+  }
+}
+
+// ---- RESET ZOOM ----
+function resetZoom(varName){
+  Plotly.relayout(charts[varName].div,{'xaxis.autorange':true,'yaxis.autorange':true});
+  setTimeout(()=>{
+    zoomStates[varName].baseRange=null; zoomStates[varName].zoomX=1.0; zoomStates[varName].zoomY=1.0;
+    zoomStates[varName].centerX=null; zoomStates[varName].centerY=null;
+    updateSliderDisplay(varName,50,50);
+  },100);
+}
+
 // ---- CREAR GRÁFICAS ----
 function createCharts(){
   variables.forEach(v=>{
-    const divId = 'grafica_' + v;
-    let container = document.getElementById(divId);
-    if(!container){
-      container = document.createElement('div');
-      container.id = divId;
-      container.style.width='100%';
-      container.style.height='380px';
-      container.style.marginBottom='25px';
-      container.style.padding='15px';
-      container.style.background='#071923';
-      container.style.borderRadius='8px';
-      container.style.border='1px solid #0f3a45';
-      document.querySelector('#graficaPlotly').appendChild(container);
-    }
-
-    createChartControls(v, container);
-
-    charts[v] = {
-      div: container,
-      layout: {
-        title:{ text:'', font:{ color:'#00e5ff', size:14 } },
-        plot_bgcolor:'#071923',
-        paper_bgcolor:'#071923',
-        font:{ color:'#eaf6f8' },
-        xaxis:{ type:'date', gridcolor:'#0f3a45', tickcolor:'#0f3a45' },
-        yaxis:{ gridcolor:'#0f3a45', autorange:true },
-        margin:{ l:60,r:30,t:10,b:80 },
-        showlegend:false
-      },
-      config:{ responsive:true, displayModeBar:true, displaylogo:false }
-    };
-
+    let container=document.getElementById('grafica_'+v);
+    if(!container){container=document.createElement('div'); container.id='grafica_'+v;
+      container.style.width='100%'; container.style.height='380px'; container.style.marginBottom='25px';
+      container.style.padding='15px'; container.style.background='#071923'; container.style.borderRadius='8px';
+      container.style.border='1px solid #0f3a45'; document.querySelector('#graficaPlotly').appendChild(container);}
+    createChartControls(v,container);
+    charts[v]={div:container,layout:{
+      title:{text:'',font:{color:'#00e5ff',size:14}},
+      plot_bgcolor:'#071923',paper_bgcolor:'#071923',font:{color:'#eaf6f8'},
+      xaxis:{type:'date',gridcolor:'#0f3a45',tickcolor:'#0f3a45'},yaxis:{gridcolor:'#0f3a45',autorange:true},
+      margin:{l:60,r:30,t:10,b:80},showlegend:false
+    },config:{responsive:true,displayModeBar:true,displaylogo:false}};
     Plotly.newPlot(container,[],charts[v].layout,charts[v].config);
-    setupPlotlyZoomListener(v);
   });
 }
 
 // ---- ACTUALIZAR GRÁFICA ----
 function updateChart(varName){
-  const buf = dataBuffers[varName];
-  if(buf.x.length===0) return;
-
-  const combined = buf.x.map((x,i)=>({ x:new Date(x), y:buf.y[i] })).sort((a,b)=>a.x-b.x);
-  const dataCount = combined.length;
-
-  const mode = dataCount <= 15 ? 'lines+markers' : 'lines';
-  const markerSize = dataCount <= 15 ? 6 : 0;
-
-  const trace = {
-    x: combined.map(d=>d.x),
-    y: combined.map(d=>d.y),
-    type:'scatter',
-    mode:mode,
-    line:{ color: colorMap[varName], width:2 },
-    marker:{ size:markerSize, color:colorMap[varName], opacity:0.8 },
-    name: varName,
-    hovertemplate:'%{x|%d/%m %H:%M}<br>'+varName+': %{y:.2f}<extra></extra>',
-    connectgaps:false
-  };
-
+  const buf=dataBuffers[varName]; if(buf.x.length===0) return;
+  const combined=buf.x.map((x,i)=>({x:new Date(x),y:buf.y[i]})).sort((a,b)=>a.x-b.x);
+  const dataCount=combined.length;
+  const mode=dataCount<=30?'lines+markers':'lines';
+  const markerSize=dataCount<=30?6:0;
+  const trace={x:combined.map(d=>d.x),y:combined.map(d=>d.y),type:'scatter',mode:mode,
+    line:{color:colorMap[varName],width:2},marker:{size:markerSize,color:colorMap[varName],opacity:0.8},
+    name:varName,hovertemplate:'%{x|%d/%m %H:%M}<br>'+varName+': %{y:.2f}<extra></extra>',connectgaps:false};
   Plotly.react(charts[varName].div,[trace],charts[varName].layout,charts[varName].config);
 }
 
-// ---- PUSH PUNTO NUEVO ----
-function pushPoint(varName, fecha, value){
-  const buf = dataBuffers[varName];
-  buf.x.push(fecha);
-  buf.y.push(value);
-  if(buf.x.length>MAX_POINTS){ buf.x.shift(); buf.y.shift(); }
+// ---- PUSH PUNTOS NUEVOS ----
+function pushPoint(varName,fecha,value){
+  const buf=dataBuffers[varName]; buf.x.push(fecha); buf.y.push(value);
+  if(buf.x.length>MAX_POINTS){buf.x.shift();buf.y.shift();}
   updateChart(varName);
+}
+
+// ---- CARGAR HISTORICO ----
+async function loadAllFromMongo(){
+  try{
+    const res=await fetch('/api/data/all'); if(!res.ok) throw new Error('Error '+res.status);
+    const all=await res.json();
+    variables.forEach(v=>{dataBuffers[v].x=[];dataBuffers[v].y=[];});
+    all.forEach(rec=>{
+      const fecha=new Date(rec.fecha);
+      variables.forEach(v=>{if(rec[v]!==undefined && rec[v]!==null){dataBuffers[v].x.push(fecha);dataBuffers[v].y.push(rec[v]);}});
+      if(rec.latitud && rec.longitud) updateMap(rec.latitud,rec.longitud,rec.fecha);
+    });
+    variables.forEach(v=>updateChart(v));
+  }catch(e){console.error('❌ Error cargando histórico:',e);}
 }
 
 // ---- SOCKET.IO ----
 socket.on('connect',()=>console.log('🔌 Socket conectado'));
 socket.on('disconnect',()=>console.log('🔌 Socket desconectado'));
-socket.on('nuevoDato', data=>{
-  const fecha = data.fecha?new Date(data.fecha):new Date();
-
+socket.on('nuevoDato',data=>{
+  const fecha=data.fecha?new Date(data.fecha):new Date();
   if(data.latitud && data.longitud) updateMap(data.latitud,data.longitud,data.fecha);
-
-  variables.forEach(v=>{
-    if(data[v]!==undefined && data[v]!==null) pushPoint(v,fecha,data[v]);
-  });
+  variables.forEach(v=>{if(data[v]!==undefined && data[v]!==null) pushPoint(v,fecha,data[v]);});
 });
-
-// ---- CARGAR HISTÓRICO ----
-async function loadAllFromMongo(){
-  try{
-    const res = await fetch('/api/data/all');
-    if(!res.ok) throw new Error('Error '+res.status);
-    const all = await res.json();
-    if(!all || !Array.isArray(all)) return;
-
-    variables.forEach(v=>{ dataBuffers[v].x=[]; dataBuffers[v].y=[]; });
-
-    all.forEach(rec=>{
-      const fecha=new Date(rec.fecha);
-      variables.forEach(v=>{ if(rec[v]!==undefined && rec[v]!==null){ dataBuffers[v].x.push(fecha); dataBuffers[v].y.push(rec[v]); } });
-      if(rec.latitud && rec.longitud) updateMap(rec.latitud, rec.longitud, rec.fecha);
-    });
-
-    variables.forEach(v=>updateChart(v));
-
-  }catch(e){ console.error('❌ Error cargando histórico:', e); }
-}
 
 // ---- INICIO ----
 (async function init(){
