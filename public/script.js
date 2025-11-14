@@ -25,59 +25,29 @@ variables.forEach(v => {
   };
 });
 
-// ---- REORDENAR ELEMENTOS ----
-function reorganizarElementos() {
-  const container = document.querySelector('.container');
-  if (!container) return;
-  
-  // Obtener elementos
-  const graficaPlotly = document.getElementById('graficaPlotly');
-  const mapContainer = document.getElementById('map');
-  const btnHistoricos = document.getElementById('btnHistoricos');
-  
-  // Limpiar container
-  while (container.firstChild) {
-    container.removeChild(container.firstChild);
-  }
-  
-  // Reconstruir en el orden correcto
-  if (graficaPlotly) container.appendChild(graficaPlotly);
-  if (mapContainer) container.appendChild(mapContainer);
-  if (btnHistoricos) container.appendChild(btnHistoricos);
-  
-  console.log('🔄 Elementos reorganizados correctamente');
-}
-
-// ---- INIT MAP MEJORADO ----
+// ---- INIT MAP ----
 let map, marker;
 function initMap(){
-  // Crear contenedor del mapa si no existe
+  // Verificar si el mapa ya existe
   let mapContainer = document.getElementById('map');
   if (!mapContainer) {
-    mapContainer = document.createElement('div');
-    mapContainer.id = 'map';
-    mapContainer.className = 'card';
-    mapContainer.innerHTML = '<h3>Ubicación GPS</h3>';
-    
-    const mapInner = document.createElement('div');
-    mapInner.id = 'map-inner';
-    mapInner.style.width = '100%';
-    mapInner.style.height = '400px';
-    mapInner.style.borderRadius = '8px';
-    
-    mapContainer.appendChild(mapInner);
-    
-    // Insertar el mapa después de las gráficas
-    const graficaPlotly = document.getElementById('graficaPlotly');
-    if (graficaPlotly) {
-      graficaPlotly.parentNode.insertBefore(mapContainer, graficaPlotly.nextSibling);
-    }
+    console.log('❌ Contenedor del mapa no encontrado');
+    return;
   }
-
-  // Inicializar el mapa en el contenedor correcto
-  const mapInner = document.getElementById('map-inner');
-  if (!mapInner) return;
   
+  // Limpiar el contenedor del mapa
+  mapContainer.innerHTML = '';
+  
+  // Crear elemento interno para el mapa
+  const mapInner = document.createElement('div');
+  mapInner.id = 'map-inner';
+  mapInner.style.width = '100%';
+  mapInner.style.height = '400px';
+  mapInner.style.borderRadius = '8px';
+  
+  mapContainer.appendChild(mapInner);
+  
+  // Inicializar el mapa
   map = L.map('map-inner').setView([4.65, -74.1], 12);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -471,7 +441,7 @@ function resetZoom(varName) {
   }, 100);
 }
 
-// ---- ACTUALIZAR GRÁFICA ----
+// ---- ACTUALIZAR GRÁFICA CON PUNTOS ----
 function updateChart(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
@@ -481,18 +451,30 @@ function updateChart(varName) {
     y: buf.y[i]
   })).sort((a, b) => a.x - b.x);
   
+  // Determinar el modo basado en la cantidad de datos
+  const dataCount = combined.length;
+  const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
+  const markerSize = dataCount <= 30 ? 6 : 0;
+  
   const trace = {
     x: combined.map(d => d.x),
     y: combined.map(d => d.y),
     type: 'scatter',
-    mode: 'lines',
+    mode: mode,
     line: { color: colorMap[varName], width: 2 },
+    marker: {
+      size: markerSize,
+      color: colorMap[varName],
+      opacity: 0.8
+    },
     name: varName,
     hovertemplate: '%{x|%d/%m %H:%M}<br>' + varName + ': %{y:.2f}<extra></extra>',
     connectgaps: false
   };
   
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
+  
+  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
 
 // ---- CREAR GRAFICAS ----
@@ -567,7 +549,12 @@ async function loadAllFromMongo(){
     if(!res.ok) throw new Error('Error '+res.status);
     const all = await res.json();
     
-    if (!all || !Array.isArray(all)) return;
+    if (!all || !Array.isArray(all)) {
+      console.log('⚠️ No se recibieron datos históricos');
+      return;
+    }
+    
+    console.log('📥 Cargando históricos:', all.length, 'registros');
     
     variables.forEach(v => {
       dataBuffers[v].x = [];
@@ -593,16 +580,16 @@ async function loadAllFromMongo(){
       updateChart(v);
     });
 
-    console.log('✅ Históricos cargados:', all.length, 'registros');
+    console.log('✅ Históricos cargados correctamente');
 
   } catch(e) {
-    console.error('Error cargando histórico', e);
+    console.error('❌ Error cargando histórico:', e);
   }
 }
 
 // ---- SOCKET.IO MEJORADO ----
 socket.on('connect', () => {
-  console.log('🔌 Socket conectado - Listo para datos en tiempo real');
+  console.log('🔌 Socket conectado - Listo para datos MQTT en tiempo real');
 });
 
 socket.on('disconnect', () => {
@@ -628,21 +615,31 @@ socket.on('nuevoDato', data => {
   });
 });
 
+// ---- VERIFICAR ELEMENTOS ----
+function verificarElementos() {
+  const elementos = ['map', 'btnHistoricos', 'graficaPlotly'];
+  elementos.forEach(id => {
+    const elemento = document.getElementById(id);
+    console.log(`${id}:`, elemento ? '✅ Encontrado' : '❌ No encontrado');
+  });
+}
+
 // ---- INICIO MEJORADO ----
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
   
-  // 1. Crear gráficas
-  createCharts();
+  // Verificar elementos existentes
+  verificarElementos();
   
-  // 2. Inicializar mapa
+  // 1. Inicializar mapa
   initMap();
   
-  // 3. Reorganizar elementos (gráficas -> mapa -> botón históricos)
-  reorganizarElementos();
+  // 2. Crear gráficas
+  createCharts();
   
-  // 4. Cargar datos históricos
+  // 3. Cargar datos históricos
   await loadAllFromMongo();
   
-  console.log('✅ Aplicación completamente inicializada y lista para datos MQTT');
+  console.log('✅ Aplicación completamente inicializada');
+  console.log('📡 Esperando datos MQTT en tiempo real...');
 })();
