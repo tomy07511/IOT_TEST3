@@ -13,6 +13,7 @@ const MAX_POINTS = 5000;
 const dataBuffers = {};
 const charts = {};
 const zoomStates = {};
+let autoScrollEnabled = true;
 
 variables.forEach(v => {
   dataBuffers[v] = {x: [], y: []};
@@ -24,6 +25,81 @@ variables.forEach(v => {
     centerY: null
   };
 });
+
+// ---- TOGGLE AUTO-SCROLL ----
+function toggleAutoScroll() {
+  autoScrollEnabled = !autoScrollEnabled;
+  const btn = document.getElementById('toggleScrollBtn');
+  if (btn) {
+    btn.textContent = autoScrollEnabled ? '🔒 Auto-Scroll: ON' : '🔓 Auto-Scroll: OFF';
+    btn.style.background = autoScrollEnabled ? '#00e5ff' : '#ff7043';
+    btn.style.color = autoScrollEnabled ? '#002' : '#fff';
+  }
+  console.log(`Auto-scroll ${autoScrollEnabled ? 'activado' : 'desactivado'}`);
+}
+
+function addAutoScrollToggle() {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'toggleScrollBtn';
+  toggleBtn.textContent = '🔒 Auto-Scroll: ON';
+  toggleBtn.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 15px;
+    background: #00e5ff;
+    color: #002;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 600;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,229,255,0.3);
+    transition: all 0.3s ease;
+  `;
+  toggleBtn.addEventListener('click', toggleAutoScroll);
+  
+  // Efecto hover
+  toggleBtn.addEventListener('mouseenter', () => {
+    toggleBtn.style.transform = 'translateY(-2px)';
+    toggleBtn.style.boxShadow = '0 6px 16px rgba(0,229,255,0.4)';
+  });
+  
+  toggleBtn.addEventListener('mouseleave', () => {
+    toggleBtn.style.transform = 'translateY(0)';
+    toggleBtn.style.boxShadow = '0 4px 12px rgba(0,229,255,0.3)';
+  });
+  
+  document.body.appendChild(toggleBtn);
+}
+
+// ---- AUTO-SCROLL A ÚLTIMOS DATOS ----
+function autoScrollToLatest(varName) {
+  if (!autoScrollEnabled) return;
+  
+  const buf = dataBuffers[varName];
+  if (buf.x.length === 0) return;
+  
+  // Tomar últimos 10 puntos para el auto-scroll
+  const lastPoints = buf.x.slice(-10).map(x => new Date(x));
+  const lastValues = buf.y.slice(-10);
+  
+  if (lastPoints.length === 0) return;
+  
+  const minX = new Date(Math.min(...lastPoints.map(x => x.getTime())));
+  const maxX = new Date(Math.max(...lastPoints.map(x => x.getTime())));
+  const minY = Math.min(...lastValues);
+  const maxY = Math.max(...lastValues);
+  
+  const padding = (maxY - minY) * 0.1 || 1;
+  
+  Plotly.relayout(charts[varName].div, {
+    'xaxis.range': [minX, maxX],
+    'yaxis.range': [minY - padding, maxY + padding],
+    'xaxis.autorange': false,
+    'yaxis.autorange': false
+  });
+}
 
 // ---- INIT MAP ----
 let map, marker;
@@ -584,6 +660,11 @@ function pushPoint(varName, fecha, value){
   }
   
   updateChart(varName);
+  
+  // AUTO-SCROLL SOLO SI ESTÁ ACTIVADO
+  if (autoScrollEnabled) {
+    autoScrollToLatest(varName);
+  }
 }
 
 // ---- CARGAR HISTORICO COMPLETO ----
@@ -730,6 +811,7 @@ function verificarElementos() {
   
   // Crear indicador de estado
   createStatusIndicator();
+  addAutoScrollToggle();
   
   // Verificar elementos existentes
   verificarElementos();
