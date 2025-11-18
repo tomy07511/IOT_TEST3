@@ -15,34 +15,45 @@
     }
     html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
     header{padding:12px 18px;text-align:center;color:var(--accent);}
+    
     .controls{
-      padding:0 16px 8px 16px;
+      padding:15px;
       display: flex;
       align-items: center;
-      gap: 15px;
+      gap: 20px;
       flex-wrap: wrap;
+      background: var(--card);
+      margin: 15px;
+      border-radius: 8px;
     }
+    
     select {
-      padding:6px;
+      padding:8px 12px;
       border-radius:6px;
       border:1px solid var(--muted);
-      background:transparent;
-      color:var(--text)
+      background:var(--card);
+      color:var(--text);
+      font-size: 14px;
     }
+    
     .download-btn {
-      padding: 8px 16px;
+      padding: 10px 20px;
       background: var(--accent);
       color: #002;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       font-weight: 600;
+      font-size: 14px;
       transition: all 0.3s ease;
     }
+    
     .download-btn:hover {
       background: #00bcd4;
       transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,229,255,0.3);
     }
+    
     table{
       width:95%;
       margin:14px auto 40px;
@@ -50,46 +61,72 @@
       border-collapse:collapse;
       color:var(--text);
       border-radius:8px;
-      overflow:hidden
+      overflow:hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
+    
     th,td{
-      padding:10px;
+      padding:12px;
       text-align:center;
       border-bottom:1px solid var(--muted)
     }
+    
     th{
       background:linear-gradient(90deg,#004d55,#007f8a);
-      color:#eaf6f8
+      color:#eaf6f8;
+      font-weight: 600;
     }
+    
+    tr:hover {
+      background: rgba(0,229,255,0.05);
+    }
+    
     #pagination{
-      padding:10px;
-      text-align:center
+      padding:15px;
+      text-align:center;
     }
+    
     #pagination button{
-      margin:2px;
-      padding:6px 8px;
+      margin:4px;
+      padding:8px 12px;
       border-radius:6px;
       border:none;
       background:var(--accent);
-      cursor:pointer
+      color:#002;
+      cursor:pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    
+    #pagination button:hover:not(:disabled){
+      background:#00bcd4;
+      transform: translateY(-2px);
+    }
+    
+    #pagination button:disabled{
+      background:#007f8a;
+      cursor: not-allowed;
+      transform: none;
     }
   </style>
 </head>
 <body>
-  <header><h2> Históricos — Base de Datos</h2></header>
+  <header>
+    <h2>📊 Históricos — Base de Datos</h2>
+  </header>
 
   <div class="controls">
-    <label for="tablaSelect" style="color:var(--accent)">Variable:</label>
+    <label for="tablaSelect" style="color:var(--accent); font-weight: 600;">Variable:</label>
     <select id="tablaSelect">
-      <option value="temperatura">Temperatura</option>
-      <option value="humedad">Humedad</option>
-      <option value="conductividad">Conductividad</option>
-      <option value="ph">pH</option>
-      <option value="nitrogeno">Nitrógeno</option>
-      <option value="fosforo">Fósforo</option>
-      <option value="potasio">Potasio</option>
-      <option value="bateria">Batería</option>
-      <option value="corriente">Corriente</option>
+      <option value="temperatura">🌡️ Temperatura</option>
+      <option value="humedad">💧 Humedad</option>
+      <option value="conductividad">⚡ Conductividad</option>
+      <option value="ph">🧪 pH</option>
+      <option value="nitrogeno">🔵 Nitrógeno</option>
+      <option value="fosforo">🔴 Fósforo</option>
+      <option value="potasio">🟢 Potasio</option>
+      <option value="bateria">🔋 Batería</option>
+      <option value="corriente">📊 Corriente</option>
     </select>
     
     <button class="download-btn" onclick="downloadCSV()">
@@ -98,35 +135,68 @@
   </div>
 
   <table id="dataTable">
-    <thead><tr><th>Fecha</th><th>Valor</th></tr></thead>
+    <thead>
+      <tr>
+        <th>📅 Fecha</th>
+        <th>🔢 Valor</th>
+      </tr>
+    </thead>
     <tbody></tbody>
   </table>
+  
   <div id="pagination"></div>
 
   <script>
-  const socket=io();
-  let allData=[],currentPage=1;
-  const recordsPerPage=20;
+  const socket = io();
+  let allData = [], currentPage = 1;
+  const recordsPerPage = 20;
 
   function renderTable(){
-    const key=document.getElementById('tablaSelect').value;
-    const tbody=document.querySelector('#dataTable tbody');
-    const totalPages=Math.ceil(allData.length/recordsPerPage)||1;
-    const start=(currentPage-1)*recordsPerPage,end=start+recordsPerPage;
-    const slice=allData.slice(start,end);
-    tbody.innerHTML=slice.map(d=>{
-      let val=d[key];if(val===undefined){for(const k in d){if(k.toLowerCase()===key.toLowerCase()){val=d[k];break;}}}
-      if(typeof val==='number') val=val.toFixed(3);
-      return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val??''}</td></tr>`;
+    const key = document.getElementById('tablaSelect').value;
+    const tbody = document.querySelector('#dataTable tbody');
+    const totalPages = Math.ceil(allData.length / recordsPerPage) || 1;
+    const start = (currentPage - 1) * recordsPerPage;
+    const end = start + recordsPerPage;
+    const slice = allData.slice(start, end);
+    
+    tbody.innerHTML = slice.map(d => {
+      let val = d[key];
+      if(val === undefined){
+        for(const k in d){
+          if(k.toLowerCase() === key.toLowerCase()){
+            val = d[k];
+            break;
+          }
+        }
+      }
+      if(typeof val === 'number') val = val.toFixed(3);
+      return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val ?? ''}</td></tr>`;
     }).join('');
-    const pag=document.getElementById('pagination');
-    pag.innerHTML='';for(let i=1;i<=totalPages;i++){const b=document.createElement('button');b.textContent=i;b.disabled=i===currentPage;b.onclick=()=>{currentPage=i;renderTable();};pag.appendChild(b);}
+    
+    const pag = document.getElementById('pagination');
+    pag.innerHTML = '';
+    for(let i = 1; i <= totalPages; i++){
+      const b = document.createElement('button');
+      b.textContent = i;
+      b.disabled = i === currentPage;
+      b.onclick = () => {
+        currentPage = i;
+        renderTable();
+      };
+      pag.appendChild(b);
+    }
   }
 
   async function loadAll(){
-    const res=await fetch('/api/data/all');const json=await res.json();
-    allData=json.map(d=>({...d,fecha:new Date(d.fecha)})).sort((a,b)=>b.fecha-a.fecha);
-    renderTable();
+    try {
+      const res = await fetch('/api/data/all');
+      const json = await res.json();
+      allData = json.map(d => ({...d, fecha: new Date(d.fecha)})).sort((a, b) => b.fecha - a.fecha);
+      renderTable();
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+      alert('Error al cargar los datos históricos');
+    }
   }
 
   // Función para descargar CSV con todas las variables
@@ -135,6 +205,9 @@
       alert('No hay datos para descargar');
       return;
     }
+
+    // Mostrar mensaje de descarga
+    alert(`Descargando CSV con ${allData.length} registros...`);
 
     // Definir columnas en el orden deseado
     const columns = [
@@ -202,7 +275,11 @@
     document.body.removeChild(link);
   }
 
-  document.getElementById('tablaSelect').onchange=()=>{currentPage=1;renderTable();};
+  document.getElementById('tablaSelect').onchange = () => {
+    currentPage = 1;
+    renderTable();
+  };
+  
   loadAll();
   </script>
 </body>
