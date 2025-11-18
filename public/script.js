@@ -955,3 +955,83 @@ function verificarElementos() {
   console.log('✅ Aplicación completamente inicializada');
   console.log('📡 Esperando datos MQTT en tiempo real...');
 })();
+
+// ---- FUNCIÓN PARA DESCARGAR CSV ----
+function downloadCSV() {
+    if (!allData || allData.length === 0) {
+        alert('No hay datos para descargar');
+        return;
+    }
+
+    console.log('Iniciando descarga CSV con', allData.length, 'registros');
+
+    // Definir columnas en el orden deseado
+    const columns = [
+        'fecha', 'humedad', 'temperatura', 'conductividad', 'ph',
+        'nitrogeno', 'fosforo', 'potasio', 'bateria', 'corriente',
+        'latitud', 'longitud', 'hora_gps', 'rssi'
+    ];
+
+    // Crear encabezados CSV
+    const headers = [
+        'Fecha',
+        'Humedad',
+        'Temperatura', 
+        'Conductividad',
+        'pH',
+        'Nitrógeno',
+        'Fósforo',
+        'Potasio',
+        'Batería',
+        'Corriente',
+        'Latitud',
+        'Longitud',
+        'Hora GPS',
+        'RSSI'
+    ];
+
+    // Crear filas de datos
+    const csvRows = [headers.join(',')];
+    
+    allData.forEach(item => {
+        const row = columns.map(col => {
+            let value = item[col];
+            
+            if (col === 'fecha') {
+                value = new Date(value).toLocaleString();
+            }
+            
+            if (typeof value === 'number') {
+                value = Number(value).toFixed(2);
+            }
+            
+            // Escapar comas y comillas para CSV
+            if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+                value = `"${value.replace(/"/g, '""')}"`;
+            }
+            
+            return value || '';
+        });
+        
+        csvRows.push(row.join(','));
+    });
+
+    // Crear y descargar archivo
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `datos_sensores_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    console.log('✅ CSV descargado correctamente');
+}
+
+// Asegurar que la función esté disponible globalmente
+window.downloadCSV = downloadCSV;
