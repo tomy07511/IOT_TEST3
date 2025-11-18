@@ -39,24 +39,23 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(tab => {
     tab.classList.remove('active');
   });
-
+  
   // Remover activo de todos los botones
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.remove('active');
   });
-
+  
   // Mostrar pestaña seleccionada
   document.getElementById(`${tabName}-tab`).classList.add('active');
-
+  
   // Activar botón seleccionado
   event.target.classList.add('active');
-
+  
   // Si es la pestaña de históricos, cargar la tabla
   if (tabName === 'historicos') {
     loadHistoricalTable();
   }
-
-  console.log(`🔀 Cambiando a pestaña: ${tabName}`);
+  
   console.log(` Cambiando a pestaña: ${tabName}`);
 }
 
@@ -68,7 +67,7 @@ function renderHistoricalTable() {
   const start = (currentPage - 1) * recordsPerPage;
   const end = start + recordsPerPage;
   const slice = allData.slice(start, end);
-
+  
   tbody.innerHTML = slice.map(d => {
     let val = d[key];
     if (val === undefined) {
@@ -82,7 +81,7 @@ function renderHistoricalTable() {
     if (typeof val === 'number') val = val.toFixed(3);
     return `<tr><td>${new Date(d.fecha).toLocaleString()}</td><td>${val ?? ''}</td></tr>`;
   }).join('');
-
+  
   const pag = document.getElementById('pagination');
   pag.innerHTML = '';
   for (let i = 1; i <= totalPages; i++) {
@@ -102,17 +101,16 @@ async function loadHistoricalTable() {
     // Mostrar loading en la tabla
     const tbody = document.querySelector('#historicos-table tbody');
     tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 40px; color: var(--accent);">🔄 Cargando datos históricos...</td></tr>';
-
+    
     const res = await fetch('/api/data/all');
     if (!res.ok) throw new Error('Error ' + res.status);
-
+    
     const json = await res.json();
     allData = json.map(d => ({...d, fecha: new Date(d.fecha)})).sort((a, b) => b.fecha - a.fecha);
-
+    
     renderHistoricalTable();
-    console.log('📊 Tabla histórica cargada:', allData.length, 'registros');
     console.log(' Tabla histórica cargada:', allData.length, 'registros');
-
+    
   } catch (e) {
     console.error('❌ Error cargando tabla histórica:', e);
     const tbody = document.querySelector('#historicos-table tbody');
@@ -148,13 +146,12 @@ function createLoadingIndicator() {
     text-align: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   `;
-
+  
   loadingDiv.innerHTML = `
-    <div style="color: var(--accent); margin-bottom: 10px; font-weight: bold;">🔄 Cargando datos...</div>
     <div style="color: var(--accent); margin-bottom: 10px; font-weight: bold;"> Cargando datos...</div>
     <div style="color: var(--text); font-size: 12px;" id="loading-text">Inicializando aplicación</div>
   `;
-
+  
   document.body.appendChild(loadingDiv);
   return loadingDiv;
 }
@@ -180,7 +177,6 @@ function toggleAutoScroll(varName) {
   autoScrollStates[varName] = !autoScrollStates[varName];
   const btn = document.getElementById(`autoScrollBtn_${varName}`);
   if (btn) {
-    btn.textContent = autoScrollStates[varName] ? '🔒 Auto' : '🔓 Manual';
     btn.textContent = autoScrollStates[varName] ? ' Auto' : ' Manual';
     btn.title = autoScrollStates[varName] ? 'Auto-scroll activado' : 'Auto-scroll desactivado';
     btn.style.background = autoScrollStates[varName] ? '#00e5ff' : '#ff7043';
@@ -193,23 +189,23 @@ function toggleAutoScroll(varName) {
 function autoScrollToLatest(varName) {
   // VERIFICACIÓN CORREGIDA: Solo hacer auto-scroll si está activado
   if (!autoScrollStates[varName]) return;
-
+  
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
-
+  
   // Tomar últimos 10 puntos para el auto-scroll
   const lastPoints = buf.x.slice(-10).map(x => new Date(x));
   const lastValues = buf.y.slice(-10);
-
+  
   if (lastPoints.length === 0) return;
-
+  
   const minX = new Date(Math.min(...lastPoints.map(x => x.getTime())));
   const maxX = new Date(Math.max(...lastPoints.map(x => x.getTime())));
   const minY = Math.min(...lastValues);
   const maxY = Math.max(...lastValues);
-
+  
   const padding = (maxY - minY) * 0.1 || 1;
-
+  
   Plotly.relayout(charts[varName].div, {
     'xaxis.range': [minX, maxX],
     'yaxis.range': [minY - padding, maxY + padding],
@@ -226,46 +222,44 @@ function initMap(){
     console.log('❌ Contenedor del mapa no encontrado');
     return;
   }
-
+  
   mapContainer.innerHTML = '';
-
+  
   const mapInner = document.createElement('div');
   mapInner.id = 'map-inner';
   mapInner.style.width = '100%';
   mapInner.style.height = '400px';
   mapInner.style.borderRadius = '8px';
-
+  
   mapContainer.appendChild(mapInner);
-
+  
   map = L.map('map-inner').setView([4.65, -74.1], 12);
-
+  
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
     maxZoom: 18
   }).addTo(map);
-
+  
   marker = L.marker([4.65, -74.1]).addTo(map)
     .bindPopup('Esperando datos GPS...')
     .openPopup();
-
-  console.log('🗺️ Mapa inicializado correctamente');
+  
   console.log(' Mapa inicializado correctamente');
 }
 
 // ---- ACTUALIZAR MAPA EN TIEMPO REAL ----
 function updateMap(latitud, longitud, fecha) {
   if (!map) {
-    console.log('⚠️ Mapa no está inicializado');
     console.log('Mapa no está inicializado');
     return;
   }
-
+  
   if (latitud && longitud) {
     const newLatLng = [latitud, longitud];
-
+    
     marker.setLatLng(newLatLng);
     map.setView(newLatLng, 14);
-
+    
     const fechaStr = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
     marker.bindPopup(`
       <div style="text-align: center;">
@@ -275,8 +269,7 @@ function updateMap(latitud, longitud, fecha) {
         <small>${fechaStr}</small>
       </div>
     `).openPopup();
-
-    console.log(`🗺️ Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
+    
     console.log(`Mapa actualizado: ${latitud.toFixed(5)}, ${longitud.toFixed(5)}`);
   }
 }
@@ -296,7 +289,7 @@ function createChartControls(varName, container) {
     border: 1px solid #0f3a45;
     flex-wrap: wrap;
   `;
-
+  
   // Título
   const title = document.createElement('span');
   title.textContent = varName;
@@ -307,15 +300,15 @@ function createChartControls(varName, container) {
     text-transform: capitalize;
     font-size: 14px;
   `;
-
+  
   // Controles de Zoom X
   const zoomXDiv = document.createElement('div');
   zoomXDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
-
+  
   const zoomXLabel = document.createElement('span');
   zoomXLabel.textContent = 'Zoom X:';
   zoomXLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
-
+  
   const zoomXSlider = document.createElement('input');
   zoomXSlider.type = 'range';
   zoomXSlider.min = '10';
@@ -329,19 +322,19 @@ function createChartControls(varName, container) {
     outline: none;
     -webkit-appearance: none;
   `;
-
+  
   const zoomXValue = document.createElement('span');
   zoomXValue.textContent = '50%';
   zoomXValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
-
+  
   // Controles de Zoom Y
   const zoomYDiv = document.createElement('div');
   zoomYDiv.style.cssText = `display: flex; align-items: center; gap: 8px; min-width: 200px;`;
-
+  
   const zoomYLabel = document.createElement('span');
   zoomYLabel.textContent = 'Zoom Y:';
   zoomYLabel.style.cssText = `color: #a0d2e0; font-size: 12px;`;
-
+  
   const zoomYSlider = document.createElement('input');
   zoomYSlider.type = 'range';
   zoomYSlider.min = '10';
@@ -355,19 +348,18 @@ function createChartControls(varName, container) {
     outline: none;
     -webkit-appearance: none;
   `;
-
+  
   const zoomYValue = document.createElement('span');
   zoomYValue.textContent = '50%';
   zoomYValue.style.cssText = `color: #00e5ff; font-size: 12px; min-width: 40px; font-weight: 600;`;
-
+  
   // Botones
   const buttonsDiv = document.createElement('div');
   buttonsDiv.style.cssText = `display: flex; gap: 8px; flex-wrap: wrap;`;
-
+  
   // Botón Auto-scroll individual
   const btnAutoScroll = document.createElement('button');
   btnAutoScroll.id = `autoScrollBtn_${varName}`;
-  btnAutoScroll.textContent = '🔒 Auto';
   btnAutoScroll.textContent = ' Auto';
   btnAutoScroll.title = 'Auto-scroll activado';
   btnAutoScroll.style.cssText = `
@@ -382,7 +374,7 @@ function createChartControls(varName, container) {
     transition: all 0.3s ease;
     min-width: 60px;
   `;
-
+  
   const btnActuales = document.createElement('button');
   btnActuales.textContent = 'Últimos';
   btnActuales.title = 'Zoom a los últimos datos';
@@ -398,7 +390,7 @@ function createChartControls(varName, container) {
     transition: all 0.3s ease;
     min-width: 60px;
   `;
-
+  
   const btnReset = document.createElement('button');
   btnReset.textContent = 'Reset';
   btnReset.title = 'Resetear zoom';
@@ -414,7 +406,7 @@ function createChartControls(varName, container) {
     transition: all 0.3s ease;
     min-width: 60px;
   `;
-
+  
   // Efectos hover para botones
   [btnAutoScroll, btnActuales, btnReset].forEach(btn => {
     btn.addEventListener('mouseenter', () => {
@@ -424,7 +416,7 @@ function createChartControls(varName, container) {
       }
       btn.style.transform = 'translateY(-2px)';
     });
-
+    
     btn.addEventListener('mouseleave', () => {
       if (btn !== btnAutoScroll) {
         btn.style.background = 'transparent';
@@ -433,7 +425,7 @@ function createChartControls(varName, container) {
       btn.style.transform = 'translateY(0)';
     });
   });
-
+  
   // Event listeners para sliders con actualización visual
   function updateSliderBackground(slider, value) {
     const min = parseInt(slider.min);
@@ -441,69 +433,69 @@ function createChartControls(varName, container) {
     const percent = ((value - min) / (max - min)) * 100;
     slider.style.background = `linear-gradient(to right, #00e5ff 0%, #00e5ff ${percent}%, #2a4a5a ${percent}%, #2a4a5a 100%)`;
   }
-
+  
   zoomXSlider.addEventListener('input', (e) => {
     const sliderValue = parseInt(e.target.value);
     zoomXValue.textContent = sliderValue + '%';
     updateSliderBackground(zoomXSlider, sliderValue);
     applyMultiplierZoom(varName, 'x', sliderValue / 50);
   });
-
+  
   zoomYSlider.addEventListener('input', (e) => {
     const sliderValue = parseInt(e.target.value);
     zoomYValue.textContent = sliderValue + '%';
     updateSliderBackground(zoomYSlider, sliderValue);
     applyMultiplierZoom(varName, 'y', sliderValue / 50);
   });
-
+  
   // Inicializar fondos de sliders
   updateSliderBackground(zoomXSlider, 50);
   updateSliderBackground(zoomYSlider, 50);
-
+  
   // Event listeners para botones
   btnAutoScroll.addEventListener('click', () => toggleAutoScroll(varName));
   btnActuales.addEventListener('click', () => zoomToLatest(varName));
   btnReset.addEventListener('click', () => resetZoom(varName));
-
+  
   // Ensamblar controles
   zoomXDiv.appendChild(zoomXLabel);
   zoomXDiv.appendChild(zoomXSlider);
   zoomXDiv.appendChild(zoomXValue);
-
+  
   zoomYDiv.appendChild(zoomYLabel);
   zoomYDiv.appendChild(zoomYSlider);
   zoomYDiv.appendChild(zoomYValue);
-
+  
   buttonsDiv.appendChild(btnAutoScroll);
   buttonsDiv.appendChild(btnActuales);
   buttonsDiv.appendChild(btnReset);
-
+  
   controlsDiv.appendChild(title);
   controlsDiv.appendChild(zoomXDiv);
   controlsDiv.appendChild(zoomYDiv);
   controlsDiv.appendChild(buttonsDiv);
-
+  
   container.parentNode.insertBefore(controlsDiv, container);
-
+  
   return { zoomXSlider, zoomXValue, zoomYSlider, zoomYValue };
 }
 
 // ---- APLICAR ZOOM COMO MULTIPLICADOR ----
 function applyMultiplierZoom(varName, axis, multiplier) {
   const state = zoomStates[varName];
-
+  
   if (!state.baseRange) {
     updateBaseRange(varName);
   }
-
+  
   if (!state.baseRange) return;
-
+  
   if (axis === 'x') {
     state.zoomX = multiplier;
   } else {
     state.zoomY = multiplier;
   }
-
+  
   applyCombinedZoom(varName);
 }
 
@@ -511,20 +503,20 @@ function applyMultiplierZoom(varName, axis, multiplier) {
 function applyCombinedZoom(varName) {
   const state = zoomStates[varName];
   const base = state.baseRange;
-
+  
   if (!base) return;
-
+  
   const visibleRangeX = (base.x[1] - base.x[0]) / state.zoomX;
   const visibleRangeY = (base.y[1] - base.y[0]) / state.zoomY;
-
+  
   const centerX = state.centerX || (base.x[0] + base.x[1]) / 2;
   const centerY = state.centerY || (base.y[0] + base.y[1]) / 2;
-
+  
   const newMinX = centerX - visibleRangeX / 2;
   const newMaxX = centerX + visibleRangeX / 2;
   const newMinY = centerY - visibleRangeY / 2;
   const newMaxY = centerY + visibleRangeY / 2;
-
+  
   Plotly.relayout(charts[varName].div, {
     'xaxis.range': [new Date(newMinX), new Date(newMaxX)],
     'yaxis.range': [newMinY, newMaxY],
@@ -538,11 +530,11 @@ function updateBaseRange(varName) {
   const graphDiv = charts[varName].div;
   const layout = graphDiv.layout;
   const buf = dataBuffers[varName];
-
+  
   if (buf.x.length === 0) return;
-
+  
   let baseX, baseY;
-
+  
   if (layout.xaxis.range) {
     const [minX, maxX] = layout.xaxis.range;
     baseX = [new Date(minX).getTime(), new Date(maxX).getTime()];
@@ -551,14 +543,14 @@ function updateBaseRange(varName) {
     const allDates = buf.x.map(x => new Date(x).getTime());
     baseX = [Math.min(...allDates), Math.max(...allDates)];
   }
-
+  
   if (layout.yaxis.range) {
     baseY = layout.yaxis.range;
     zoomStates[varName].centerY = (baseY[0] + baseY[1]) / 2;
   } else {
     baseY = [Math.min(...buf.y), Math.max(...buf.y)];
   }
-
+  
   if (baseX && baseY) {
     zoomStates[varName].baseRange = { x: baseX, y: baseY };
     zoomStates[varName].zoomX = 1.0;
@@ -570,7 +562,7 @@ function updateBaseRange(varName) {
 // ---- DETECTAR ZOOM MANUAL ----
 function setupPlotlyZoomListener(varName) {
   const container = charts[varName].div;
-
+  
   container.on('plotly_relayout', function(eventdata) {
     if (eventdata['xaxis.range[0]'] || eventdata['yaxis.range[0]']) {
       setTimeout(() => {
@@ -583,19 +575,19 @@ function setupPlotlyZoomListener(varName) {
 // ---- ACTUALIZAR DISPLAY DE SLIDERS ----
 function updateSliderDisplay(varName, xValue = 50, yValue = 50) {
   const controlsDiv = charts[varName].div.previousElementSibling;
-
+  
   if (controlsDiv) {
     const zoomXValue = controlsDiv.querySelector('span:nth-child(3)');
     const zoomYValue = controlsDiv.querySelector('span:nth-child(6)');
     const zoomXSlider = controlsDiv.querySelector('input:nth-child(2)');
     const zoomYSlider = controlsDiv.querySelector('input:nth-child(5)');
-
+    
     if (zoomXValue && zoomYValue && zoomXSlider && zoomYSlider) {
       zoomXSlider.value = xValue;
       zoomYSlider.value = yValue;
       zoomXValue.textContent = xValue + '%';
       zoomYValue.textContent = yValue + '%';
-
+      
       updateSliderBackground(zoomXSlider, xValue);
       updateSliderBackground(zoomYSlider, yValue);
     }
@@ -613,68 +605,62 @@ function updateSliderBackground(slider, value) {
 // ---- ZOOM A ÚLTIMOS DATOS (MEJORADA) ----
 function zoomToLatest(varName) {
   const buf = dataBuffers[varName];
-
+  
   if (!buf || !buf.x || !buf.y || buf.x.length === 0) {
-    console.log(`⚠️ No hay datos para ${varName}`);
     console.log(` No hay datos para ${varName}`);
     return;
   }
-
+  
   if (!charts[varName] || !charts[varName].div) {
-    console.log(`⚠️ Gráfica de ${varName} no está lista`);
     console.log(` Gráfica de ${varName} no está lista`);
     return;
   }
-
+  
   const dataCount = buf.x.length;
   const pointsToShow = Math.min(15, dataCount);
-
+  
   if (pointsToShow === 0) {
-    console.log(`⚠️ No hay datos suficientes para ${varName}`);
     console.log(` No hay datos suficientes para ${varName}`);
     return;
   }
-
+  
   const lastPoints = buf.x.slice(-pointsToShow).map(x => new Date(x));
   const lastValues = buf.y.slice(-pointsToShow);
-
+  
   const validDates = lastPoints.filter(date => !isNaN(date.getTime()));
   const validValues = lastValues.filter(val => val !== null && val !== undefined && !isNaN(val));
-
+  
   if (validDates.length === 0 || validValues.length === 0) {
-    console.log(`⚠️ Datos inválidos para ${varName}`);
     console.log(` Datos inválidos para ${varName}`);
     return;
   }
-
+  
   const minX = new Date(Math.min(...validDates.map(x => x.getTime())));
   const maxX = new Date(Math.max(...validDates.map(x => x.getTime())));
   const minY = Math.min(...validValues);
   const maxY = Math.max(...validValues);
-
+  
   const timeRange = maxX.getTime() - minX.getTime();
   const valueRange = maxY - minY;
-
+  
   const paddedMinX = new Date(minX.getTime() - timeRange * 0.1);
   const paddedMaxX = new Date(maxX.getTime() + timeRange * 0.1);
   const paddedMinY = minY - valueRange * 0.1;
   const paddedMaxY = maxY + valueRange * 0.1;
-
+  
   if (!isNaN(paddedMinX.getTime()) && !isNaN(paddedMaxX.getTime()) && 
       !isNaN(paddedMinY) && !isNaN(paddedMaxY)) {
-
+    
     Plotly.relayout(charts[varName].div, {
       'xaxis.range': [paddedMinX, paddedMaxX],
       'yaxis.range': [paddedMinY, paddedMaxY],
       'xaxis.autorange': false,
       'yaxis.autorange': false
     });
-
-    console.log(`🔍 Zoom a últimos ${pointsToShow} datos de ${varName}`);
+    
     console.log(` Zoom a últimos ${pointsToShow} datos de ${varName}`);
-
+    
   } else {
-    console.log(`❌ Rangos inválidos para ${varName}`);
     console.log(` Rangos inválidos para ${varName}`);
   }
 }
@@ -685,14 +671,14 @@ function resetZoom(varName) {
     'xaxis.autorange': true,
     'yaxis.autorange': true
   });
-
+  
   setTimeout(() => {
     zoomStates[varName].baseRange = null;
     zoomStates[varName].zoomX = 1.0;
     zoomStates[varName].zoomY = 1.0;
     zoomStates[varName].centerX = null;
     zoomStates[varName].centerY = null;
-
+    
     updateSliderDisplay(varName, 50, 50);
   }, 100);
 }
@@ -701,7 +687,7 @@ function resetZoom(varName) {
 function updateChart(varName) {
   const buf = dataBuffers[varName];
   if (buf.x.length === 0) return;
-
+  
   const combined = buf.x.map((x, i) => ({ 
     x: new Date(x), 
     y: buf.y[i]
@@ -710,7 +696,7 @@ function updateChart(varName) {
   const dataCount = combined.length;
   const mode = dataCount <= 30 ? 'lines+markers' : 'lines';
   const markerSize = dataCount <= 30 ? 6 : 0;
-
+  
   const trace = {
     x: combined.map(d => d.x),
     y: combined.map(d => d.y),
@@ -726,10 +712,9 @@ function updateChart(varName) {
     hovertemplate: '%{x|%d/%m %H:%M}<br>' + varName + ': %{y:.2f}<extra></extra>',
     connectgaps: false
   };
-
+  
   Plotly.react(charts[varName].div, [trace], charts[varName].layout, charts[varName].config);
-
-  console.log(`📊 ${varName}: ${dataCount} datos, modo: ${mode}`);
+  
   console.log(` ${varName}: ${dataCount} datos, modo: ${mode}`);
 }
 
@@ -789,14 +774,14 @@ function pushPoint(varName, fecha, value){
   const buf = dataBuffers[varName];
   buf.x.push(fecha);
   buf.y.push(value);
-
+  
   if(buf.x.length > MAX_POINTS){
     buf.x.shift();
     buf.y.shift();
   }
-
+  
   updateChart(varName);
-
+  
   // AUTO-SCROLL INDIVIDUAL POR GRÁFICA - SOLO SI ESTÁ ACTIVADO
   if (autoScrollStates[varName]) {
     autoScrollToLatest(varName);
@@ -807,20 +792,18 @@ function pushPoint(varName, fecha, value){
 async function loadAllFromMongo(){
   try{
     updateLoadingText('Cargando datos históricos...');
-
+    
     const res = await fetch('/api/data/all');
     if(!res.ok) throw new Error('Error '+res.status);
     const all = await res.json();
-
+    
     if (!all || !Array.isArray(all)) {
-      console.log('⚠️ No se recibieron datos históricos');
       console.log(' No se recibieron datos históricos');
       return;
     }
-
-    console.log('📥 Cargando históricos:', all.length, 'registros');
+    
     console.log(' Cargando históricos:', all.length, 'registros');
-
+    
     // Limpiar buffers primero
     variables.forEach(v => {
       dataBuffers[v].x = [];
@@ -836,7 +819,7 @@ async function loadAllFromMongo(){
           dataBuffers[v].y.push(rec[v]);
         }
       });
-
+      
       if (rec.latitud && rec.longitud) {
         updateMap(rec.latitud, rec.longitud, rec.fecha);
       }
@@ -874,7 +857,7 @@ function createStatusIndicator() {
     align-items: center;
     gap: 8px;
   `;
-
+  
   const dot = document.createElement('div');
   dot.id = 'status-dot';
   dot.style.cssText = `
@@ -883,11 +866,11 @@ function createStatusIndicator() {
     border-radius: 50%;
     background: #ff0000;
   `;
-
+  
   const text = document.createElement('span');
   text.id = 'status-text';
   text.textContent = 'Desconectado';
-
+  
   statusDiv.appendChild(dot);
   statusDiv.appendChild(text);
   document.body.appendChild(statusDiv);
@@ -896,7 +879,7 @@ function createStatusIndicator() {
 function updateStatus(connected) {
   const dot = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
-
+  
   if (dot && text) {
     if (connected) {
       dot.style.background = '#00ff00';
@@ -921,7 +904,7 @@ socket.on('disconnect', () => {
 
 socket.on('nuevoDato', data => {
   const fecha = data.fecha ? new Date(data.fecha) : new Date();
-
+  
   console.log('📥 Nuevo dato MQTT recibido:', data);
 
   if(data.latitud && data.longitud){
@@ -948,26 +931,27 @@ function verificarElementos() {
 // ---- INICIO MEJORADO ----
 (async function init(){
   console.log('🚀 Iniciando aplicación...');
-
+  
   createStatusIndicator();
   const loadingIndicator = createLoadingIndicator();
-
+  
   updateLoadingText('Verificando componentes...');
   verificarElementos();
-
+  
   updateLoadingText('Inicializando eventos...');
   initHistoricalEvents(); // Inicializar eventos de históricos
-
+  
   updateLoadingText('Inicializando mapa...');
   initMap();
-
+  
   updateLoadingText('Creando gráficas...');
   createCharts();
-
+  
   updateLoadingText('Cargando datos históricos...');
   await loadAllFromMongo();
-
+  
   hideLoadingIndicator();
-
+  
   console.log('✅ Aplicación completamente inicializada');
   console.log('📡 Esperando datos MQTT en tiempo real...');
+})();

@@ -1,4 +1,3 @@
-@@ -1,264 +1,279 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -27,7 +26,7 @@
     --text:#eaf6f8;
   }
   html,body{height:100%;margin:0;font-family:"Segoe UI",system-ui,Arial; background:var(--bg); color:var(--text);}
-
+  
   /* NAVEGACIÓN */
   .nav-tabs {
     display: flex;
@@ -36,7 +35,7 @@
     border-bottom: 2px solid var(--muted);
     margin-bottom: 0;
   }
-
+  
   .nav-tab {
     padding: 12px 24px;
     background: transparent;
@@ -47,7 +46,6 @@
     transition: all 0.3s ease;
     border-bottom: 3px solid transparent;
   }
-  
       /* BOLITA BLANCA PARA SLIDERS DE ZOOM */
     .controls input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
@@ -68,26 +66,26 @@
     background: var(--muted);
     color: var(--accent);
   }
-
+  
   .nav-tab.active {
     background: var(--muted);
     color: var(--accent);
     border-bottom: 3px solid var(--accent);
   }
-
+  
   header{
     padding:12px 18px;
     text-align:center;
     color:var(--accent);
     margin-bottom: 0;
   }
-
+  
   .container { 
     width:95%; 
     margin:14px auto; 
     max-width:1200px; 
   }
-
+  
   .card {
     background:var(--card);
     border-radius:12px;
@@ -95,45 +93,45 @@
     box-shadow:0 6px 18px rgba(0,229,255,0.06);
     margin-bottom:16px;
   }
-
+  
   h1,h2,h3{margin:6px 0;color:var(--accent)}
-
+  
   /* CONTENIDO DE PESTAÑAS */
   .tab-content {
     display: none;
     animation: fadeIn 0.3s ease;
   }
-
+  
   .tab-content.active {
     display: block;
   }
-
+  
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
   }
-
+  
   /* MAPA AL FINAL - ÚLTIMO ELEMENTO */
   #map { 
     width:100%; 
     height:420px; 
     border-radius:8px; 
   }
-
+  
   /* GRÁFICAS */
   #graficaPlotly { 
     width:100%; 
     min-height:480px; 
     border-radius:8px; 
   }
-
+  
   /* ESTILOS PARA HISTÓRICOS (COPIADOS DE TU HTML) */
   .controls{
     padding:0 16px 8px 16px;
     text-align: center;
     margin-bottom: 15px;
   }
-
+  
   .controls select {
     padding:8px 12px;
     border-radius:6px;
@@ -143,12 +141,12 @@
     font-size: 14px;
     margin-left: 10px;
   }
-
+  
   .controls label {
     color:var(--accent);
     font-weight: 600;
   }
-
+  
   #historicos-table{
     width:95%;
     margin:14px auto 40px;
@@ -159,29 +157,29 @@
     overflow:hidden;
     box-shadow:0 4px 12px rgba(0,0,0,0.1);
   }
-
+  
   #historicos-table th,
   #historicos-table td{
     padding:12px;
     text-align:center;
     border-bottom:1px solid var(--muted);
   }
-
+  
   #historicos-table th{
     background:linear-gradient(90deg,#004d55,#007f8a);
     color:#eaf6f8;
     font-weight: 600;
   }
-
+  
   #historicos-table tr:hover{
     background:rgba(0,229,255,0.05);
   }
-
+  
   #pagination{
     padding:15px;
     text-align:center;
   }
-
+  
   #pagination button{
     margin:4px;
     padding:8px 12px;
@@ -193,18 +191,18 @@
     font-weight: 600;
     transition: all 0.3s ease;
   }
-
+  
   #pagination button:hover:not(:disabled){
     background:#00bcd4;
     transform: translateY(-2px);
   }
-
+  
   #pagination button:disabled{
     background:#007f8a;
     cursor: not-allowed;
     transform: none;
   }
-
+  
   @media (max-width:420px){
     #map{height:320px}
     #graficaPlotly{min-height:320px}
@@ -223,8 +221,6 @@
 <body>
   <!-- NAVEGACIÓN POR PESTAÑAS -->
   <div class="nav-tabs">
-    <button class="nav-tab active" onclick="switchTab('home')">🏠 Home</button>
-    <button class="nav-tab" onclick="switchTab('historicos')">📊 Históricos</button>
     <button class="nav-tab active" onclick="switchTab('home')"> Home</button>
     <button class="nav-tab" onclick="switchTab('historicos')"> Históricos</button>
   </div>
@@ -281,3 +277,4 @@
 
   <script src="/script.js"></script>
 </body>
+</html>
